@@ -1,4 +1,4 @@
-# AI邮件工作台 for SJTU（SJTU Mail Workbench）
+# AI邮件工作台 for SJTUer（SJTU Mail Workbench）
 
 > 一个跑在你自己电脑上的邮箱整理工具。把堆满未读的收件箱，变成「待我处理 / 等待对方回复 / AI 草稿」这样的工作视图。
 >
