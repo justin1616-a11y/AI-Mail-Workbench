@@ -1,0 +1,85 @@
+/* ============================================================
+   设计 token —— 取自 WorkBuddy 官方主题
+   (~/.workbuddy/appearance-resources/theme-<hash>/skin.css)
+   主色 #3a66ac，浅蓝背景体系，保证与 WorkBuddy 现有界面一致。
+
+   注意：这里千万别写带星号通配符的路径（例如 theme-tkbdzr-✻/skin.css），
+   路径里的“✻/”会和注释结束符撞车，导致注释提前结束、整个 :root 变量块
+   被当成非法 CSS 丢掉 —— 表现是「所有颜色和尺寸都不按设计走」，
+   而且极难排查（文件看着完全正常，只是浏览器悄悄少解析了一条规则）。
+   ============================================================ */
+
+:root {
+  /* 品牌 / 主色 */
+  --brand:            #3a66ac;
+  --brand-hover:      #4e79be;
+  --brand-active:     #2c4f87;
+  --brand-deep:       #22406e;
+  --brand-soft:       #e6efff;
+  --brand-soft-2:     #d6e4fc;
+
+  /* 背景层级 */
+  --bg-rail:          #CBDDFE;   /* 最左侧导航条 = wb-sidebar-bg */
+  --bg-content:       #f5f9ff;   /* 内容区底 */
+  --bg-panel:         #ffffff;   /* 卡片 / 主区域 */
+  --bg-secondary:     #e6efff;   /* 次级容器 */
+  --bg-tertiary:      #eff4fb;
+  --bg-hover:         #d6e4fc;
+  --bg-hover-light:   #e9f2ff;
+  --bg-selected:      #b7cff0;   /* 选中行 */
+  --bg-selected-soft: #e6efff;
+
+  /* 文字 */
+  --text-primary:     #001f4fe6;
+  --text-secondary:   #001f4fb3;
+  --text-tertiary:    #001f4f80;
+  --text-muted:       #001f4f4d;
+  --text-on-brand:    #f7f8f9;
+  --text-link:        #3a66ac;
+
+  /* 边框 */
+  --border-subtle:    #dce8ff;
+  --border-default:   #c9dcf7;
+  --border-strong:    #bad3f2;
+  --border-control:   #aec8ee;
+
+  /* 语义色 */
+  --danger:           #ff5a52;
+  --danger-text:      #d93a33;
+  --warning:          #e6c029;
+  --warning-text:     #b8960f;
+  --success:          #3a66ac;
+  --unread:           #3a66ac;   /* wb-accent-unread */
+
+  /* 圆角 */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+
+  /* 阴影 */
+  --shadow-card: 0 12px 24px -8px #001f4f0f, 0 2px 4px -4px #001f4f14;
+  --shadow-pop:  0 12px 24px -8px #001f4f1a, 0 2px 4px -4px #001f4f14;
+
+  /* 尺寸 */
+  --rail-w: 68px;
+  --folders-w: 216px;
+  --list-w: 380px;
+
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+/* 滚动条也跟 WorkBuddy 一致 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #001f4f1f;
+  border-radius: var(--r-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #001f4f4d; background-clip: content-box; }

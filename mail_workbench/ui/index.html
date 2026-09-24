@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mail Workbench</title>
+<!-- 内联 favicon：消掉控制台唯一的 404 噪音。
+     排查「点了没反应」时靠的是「控制台无错误」，噪音少了才不会漏看真错误。 -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%233a66ac'/><text x='16' y='23' font-size='15' font-family='sans-serif' fill='%23ffffff' text-anchor='middle'>W2</text></svg>">
+<style>
+  :root{
+    /* 复用 V1 的 WorkBuddy 设计 token（web/css/tokens.css）；
+       独立部署时 token 不存在，自动回落到后面的默认值，外观仍可用。 */
+    --bg:var(--bg-content,#f4f6f9); --panel:var(--bg-panel,#ffffff);
+    --line:var(--border-subtle,#e3e7ec); --text:var(--text-primary,#1b1f24);
+    --muted:var(--text-tertiary,#7b8592);
+    --accent:var(--brand,#2f6bff); --accent-soft:var(--brand-soft,#eaf1ff);
+    --ok:#1a9e4b; --warn:var(--warning-text,#b8960f); --err:var(--danger-text,#d93a3f);
+    --hover:var(--bg-hover-light,#f3f6fb); --sel:var(--bg-selected-soft,#dce8ff);
+    --chip:var(--bg-tertiary,#eef1f5);
+    --vip:var(--danger-text,#c8102e); --reply:var(--brand,#2f6bff);
+    --system:#7b5bd6; --read:var(--text-tertiary,#6b7684); --dismiss:var(--text-muted,#a3aab5);
+    --r-sm:var(--r-sm,6px); --r-md:var(--r-md,8px); --r-lg:var(--r-lg,12px);
+    --font-sans:var(--font-sans,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font:13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+  button{font:inherit;cursor:pointer}
+  input,textarea,select{font:inherit;color:inherit}
+  .app{display:flex;flex-direction:column;height:100vh}
+
+  /* ---------- top ---------- */
+  .top{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);
+       border-bottom:1px solid var(--line);flex:none}
+  .brand{font-weight:700;font-size:14px;letter-spacing:.2px}
+  .brand small{font-weight:400;color:var(--muted);margin-left:6px;font-size:11px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.healthy{background:var(--ok)} .dot.warning{background:var(--warn)} .dot.error{background:var(--err)}
+  .spacer{flex:1}
+  .search{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);
+          border-radius:8px;padding:5px 10px;min-width:280px}
+  .search input{border:0;outline:0;background:transparent;flex:1;font-size:13px}
+  .btn{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:6px 11px;
+       color:var(--text);white-space:nowrap}
+  .btn:hover{background:var(--hover);border-color:#cfd6de}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.primary:hover{background:#2560ea}
+  .btn.danger{border-color:#f0bcbe;color:var(--err)}
+  .btn.ghost{border-color:transparent;color:var(--muted)}
+  .btn.sm{padding:3px 8px;font-size:12px;border-radius:6px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  /* ---------- body ---------- */
+  .body{display:flex;flex:1;min-height:0}
+
+  /* ---------- 侧边栏：写邮件 + 工作桶 + 文件夹树 + 标签树 ----------
+     外观刻意对齐 V1（web/css/app.css 的 .tree* 与 .compose-btn），
+     因为用户的手已经记住了「哪个位置是什么」——换位置比换配色更伤习惯。 */
+  .side{width:224px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+        display:flex;flex-direction:column;overflow:hidden}
+  .side-head{padding:10px 10px 6px;flex:none}
+  .compose-btn{width:100%;height:32px;border-radius:8px;border:0;
+               background:var(--accent);color:#fff;font-weight:600;
+               display:flex;align-items:center;justify-content:center;gap:6px}
+  .compose-btn:hover{background:#2560ea}
+  .tree{flex:1;overflow:auto;padding:0 8px 10px}
+  .tree-group-title{font-size:11px;color:var(--muted);padding:12px 8px 4px;letter-spacing:.3px}
+  .tree-item{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:8px;
+             color:var(--text);width:100%;text-align:left;background:none;border:0;
+             font:inherit;cursor:pointer}
+  .tree-item:hover{background:var(--hover)}
+  .tree-item.is-active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .tree-item .ti-ico{width:16px;text-align:center;font-size:13px;flex:0 0 16px}
+  .tree-item .ti-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tree-count{font-size:11px;color:var(--muted);background:var(--chip);
+              border-radius:10px;padding:1px 6px;flex:none}
+  .tree-count.is-unread{background:var(--accent);color:#fff;font-weight:600}
+  .tag-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+  .side-foot{flex:none;padding:8px 12px 10px;border-top:1px solid var(--line);
+             font-size:11.5px;color:var(--muted);line-height:1.7}
+
+  /* 工作桶行：沿用 V1 树的骨架，但保留 .bk / data-bk 这些既有钩子
+     （自检脚本按 data-bk 点桶，动它们等于白送一次回归） */
+  .bk{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:8px;
+      cursor:pointer;color:var(--text);user-select:none}
+  .bk:hover{background:var(--hover)}
+  .bk.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .bk .n{margin-left:auto;font-size:11px;background:var(--chip);color:var(--muted);
+         border-radius:10px;padding:1px 7px;min-width:22px;text-align:center;flex:none}
+  .bk.active .n{background:#d3e2ff;color:var(--accent)}
+  .bk .n.hot{background:#ffe3e3;color:var(--err)}
+  /* 「沉底」入口：视觉上刻意比工作桶**轻**。
+     它是可查的档案，不是待办 —— 所以缩进、字号更小、颜色更淡、数字不标红。
+     目的是让人一眼看出「这些不占我的注意力」，而不是换一个地方继续焦虑。
+     高度也压到 24px，且不参与 .bk 的 30px 节奏，视觉上明显是附属而非并列。 */
+  .bk.stale{height:24px;font-size:11.5px;color:var(--muted);padding-left:24px}
+  .bk.stale:hover{color:var(--text)}
+  .bk.stale .n{background:transparent;color:var(--muted);font-weight:400;min-width:0}
+  .bk.stale.active{background:var(--hover);color:var(--text);font-weight:600}
+  .mini{display:flex;justify-content:space-between;gap:8px;padding:4px 8px;
+        font-size:11.5px;color:var(--muted);border-radius:8px;cursor:default}
+  .mini[data-bk]{cursor:pointer}
+  .mini:hover{background:var(--hover)}
+  .mini.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .mini b{color:var(--text)}
+  .mini.active b{color:var(--accent)}
+
+  /* ---------- list ---------- */
+  /* position:relative 是给「回到顶部」当定位基准的（同 V1 的 .col-list） */
+  .listwrap{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--panel);
+            border-right:1px solid var(--line);position:relative}
+  .listhead{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);
+            font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .listhead b{color:var(--text);font-size:12.5px}
+  /* 全选：放在列表最上方、贴着行内复选框那一列，位置一眼就对得上 */
+  .selall{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;
+          padding:2px 6px 2px 2px;border-radius:6px;flex:none}
+  .selall:hover{background:var(--hover)}
+  .selall input{width:15px;height:15px;margin:0;cursor:pointer;accent-color:var(--accent)}
+  .selall span{font-size:12px;color:var(--muted);white-space:nowrap}
+  .selall.on span{color:var(--accent);font-weight:600}
+  /* 回到顶部：滚过一屏才淡入（沿用 V1 的 .to-top 行为，别改成常驻，
+     否则列表顶端会一直挂着一个没用的按钮） */
+  .to-top{position:absolute;right:16px;bottom:18px;z-index:5;height:30px;padding:0 13px;
+          border-radius:999px;background:var(--panel);color:var(--muted);
+          border:1px solid var(--line);font-size:12px;cursor:pointer;
+          box-shadow:0 2px 8px rgba(0,0,0,.12);
+          opacity:0;transform:translateY(6px);pointer-events:none;
+          transition:opacity .15s ease,transform .15s ease}
+  .to-top.is-show{opacity:1;transform:none;pointer-events:auto}
+  .to-top:hover{color:var(--text);background:var(--hover)}
+  .list{flex:1;overflow:auto}
+  /* 列：勾选 / 主题 / 发件人 / 时间。
+     发件人列**右对齐**并且只给 104px —— 之前左对齐的 118px 会让短名字
+     在它和日期之间留出一大片空白（名字靠左、日期靠右，中间的缝隙看着像没对齐）。 */
+  .row{display:grid;grid-template-columns:22px minmax(0,1fr) 104px 60px;
+       column-gap:6px;gap:8px 6px;padding:8px 14px;
+       border-bottom:1px solid #f0f2f5;cursor:pointer;align-items:start}
+  .row:hover{background:var(--hover)}
+  .row.sel{background:var(--sel)}
+  .row.cur{box-shadow:inset 3px 0 0 var(--accent)}
+  /* 发件人紧贴日期：右对齐，让名字的右端与日期只隔一个 column-gap */
+  .row .fromcol{text-align:right}
+  .row.unread .sub{font-weight:700}
+  .chk{width:15px;height:15px;border:1.5px solid #c6ccd4;border-radius:4px;margin-top:2px}
+  .chk.on{background:var(--accent);border-color:var(--accent);position:relative}
+  .chk.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;
+                 border:2px solid #fff;border-top:0;border-left:0;transform:rotate(42deg)}
+  .maincol{min-width:0}
+  .sub{font-size:13.5px;font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis;
+       white-space:nowrap}
+  .sum{font-size:12.5px;color:#59616c;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;
+       -webkit-box-orient:vertical;overflow:hidden}
+  .col{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .right{text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+  .chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .chip{font-size:10.5px;padding:1px 6px;border-radius:9px;background:var(--chip);color:var(--muted)}
+  .chip.vip{background:#fdecef;color:var(--vip)} .chip.reply{background:#e9f0ff;color:var(--reply)}
+  .chip.system{background:#f0ecfd;color:var(--system)} .chip.read{background:#eef1f5;color:var(--read)}
+  .chip.dismiss{background:#f3f4f6;color:var(--dismiss)}
+  .chip.job{background:#e8f7ee;color:var(--ok)} .chip.warn{background:#fff3e0;color:var(--warn)}
+  .chip.att{background:#eef1f5;color:var(--muted)}
+  /* 附件：点一下就下载并用默认程序打开，旁边另给「只下载」「定位」两个小按钮 */
+  .attbox{display:inline-flex;align-items:center;gap:3px;background:#eef1f5;
+          border-radius:9px;padding:1px 5px 1px 1px}
+  .chip.att.act{cursor:pointer;border:0;background:#e4ecfb;color:var(--accent);
+                font-family:inherit;padding:2px 7px}
+  .chip.att.act:hover{background:#d6e3fa}
+  .chip.att.act:disabled{opacity:.6;cursor:progress}
+  .chip.att.off{opacity:.85;cursor:not-allowed}
+  .attsz{font-size:10px;color:var(--muted)}
+  .chip.mini-btn{cursor:pointer;border:0;background:transparent;color:var(--muted);
+                 font-family:inherit;font-size:12px;padding:1px 4px;line-height:1}
+  .chip.mini-btn:hover{background:#dde3ec;border-radius:6px}
+  /* 仅知会：不是工作桶，样式上刻意跟上面五个区分开 */
+  .mini.info{cursor:pointer;border-radius:6px;padding:4px 10px}
+  .mini.info:hover{background:var(--hover)}
+  .mini.info.active{background:var(--sel);color:var(--text)}
+  .empty{padding:44px 20px;text-align:center;color:var(--muted)}
+  .empty b{display:block;color:var(--text);margin-bottom:6px;font-size:14px}
+
+  /* ---------- detail ---------- */
+  /* 正文列加宽：46% / 720px 上限看长文太挤（正文与草稿面板都要在这里排）。
+     上限提到 900px，且窄屏下仍能靠 min-width 保底换行。 */
+  .detail{width:54%;min-width:440px;max-width:900px;background:var(--panel);display:flex;
+          flex-direction:column;min-height:0}
+  .detail .empty{align-self:center;margin-top:60px}
+  .dhead{padding:14px 18px;border-bottom:1px solid var(--line);flex:none}
+  .dhead h2{font-size:15px;margin:0 0 8px;line-height:1.45}
+  .meta{font-size:12px;color:var(--muted);line-height:1.65}
+  .meta b{color:var(--text);font-weight:600}
+  .actions{display:flex;gap:6px;flex-wrap:wrap;padding:10px 18px;border-bottom:1px solid var(--line);
+           flex:none;background:#fbfcfe}
+  .dscroll{flex:1;overflow:auto;padding:16px 18px;font-size:13.5px;line-height:1.85;color:#333940}
+  .dscroll pre{white-space:pre-wrap;word-break:break-word;font:inherit;margin:0}
+  .panel{margin:0 18px 14px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .panel .ph{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f7f9fc;
+             border-bottom:1px solid var(--line);font-size:12px;font-weight:600}
+  .panel .pb{padding:12px}
+  textarea.draft{width:100%;min-height:190px;border:1px solid var(--line);border-radius:8px;
+                 padding:10px;line-height:1.75;resize:vertical;font-size:13px;outline:none}
+  textarea.draft:focus{border-color:var(--accent)}
+  .ctrlrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .miss{border:1px solid #f3ddb0;background:#fffaf0;border-radius:8px;padding:10px;margin-bottom:10px}
+  .miss h4{margin:0 0 6px;font-size:12.5px;color:var(--warn)}
+  .miss .item{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;font-size:12.5px}
+  .miss input{flex:1;border:1px solid #e6d8b8;border-radius:6px;padding:5px 8px;outline:none}
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:2px 9px;
+          border-radius:10px;background:var(--chip);color:var(--muted)}
+  .status.ready{background:#e8f7ee;color:var(--ok)}
+  .status.needs_input{background:#fff3e0;color:var(--warn)}
+  .status.generating{background:#eaf1ff;color:var(--accent)}
+  .status.approved{background:#e8f7ee;color:#0b7d3a}
+  .status.sent{background:#e8f7ee;color:var(--ok)}
+  .status.failed{background:#fdecef;color:var(--err)}
+  .bar{flex:none;padding:8px 14px;border-top:1px solid var(--line);background:var(--panel);
+       font-size:11.5px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+  kbd{background:#eef1f5;border:1px solid #dde2e8;border-bottom-width:2px;border-radius:4px;
+      padding:0 5px;font:11px/1.6 ui-monospace,Consolas,monospace;color:#4a5058}
+  .toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99;display:flex;
+         flex-direction:column;gap:6px;align-items:center;pointer-events:none}
+  .toast div{background:#1f2937;color:#fff;padding:8px 16px;border-radius:8px;font-size:12.5px;
+             box-shadow:0 6px 20px rgba(0,0,0,.16);max-width:70vw}
+  .toast div.ok{background:#12864a} .toast div.err{background:#c22b30} .toast div.warn{background:#a86400}
+  /* 简报区：占满剩余高度自己滚动，KPI 行固定在下方。
+     之前用 max-height 会在中途截断一行文字，看起来像排版坏了。 */
+  .briefbox{padding:14px 18px;background:#fbfcfe;font-size:12.5px;white-space:pre-wrap;
+            line-height:1.7;flex:1 1 auto;min-height:140px;overflow:auto}
+  .kpis{display:flex;gap:14px;flex-wrap:wrap;padding:10px 18px;font-size:11.5px;color:var(--muted);
+        border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+        background:#fff;flex:none}
+  .kpis b{color:var(--text);font-size:13px;margin-left:3px}
+
+  /* ---------- 写邮件弹窗 ---------- */
+  .modal{position:fixed;inset:0;background:rgba(20,26,34,.34);z-index:120;
+         display:flex;align-items:center;justify-content:center}
+  .modal .mbox{width:min(680px,92vw);max-height:86vh;background:var(--panel);
+               border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.24);
+               display:flex;flex-direction:column;overflow:hidden}
+  .modal .mhead{display:flex;align-items:center;gap:10px;padding:12px 16px;
+                border-bottom:1px solid var(--line);font-weight:600}
+  .modal .mbody{padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+  .modal .field{display:flex;flex-direction:column;gap:4px}
+  .modal .field label{font-size:11.5px;color:var(--muted)}
+  .modal .field input,.modal .field textarea{border:1px solid var(--line);border-radius:8px;
+                padding:7px 10px;outline:0;background:var(--panel)}
+  .modal .field input:focus,.modal .field textarea:focus{border-color:var(--accent)}
+  .modal .field textarea{min-height:210px;resize:vertical;line-height:1.7}
+  .modal .mfoot{display:flex;align-items:center;gap:8px;padding:12px 16px;
+                border-top:1px solid var(--line);flex-wrap:wrap}
+  .modal .mhint{font-size:11.5px;color:var(--muted)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <span class="dot" id="healthDot"></span>
+    <span class="brand">Mail Workbench <small>V2 · Human-in-the-loop</small></span>
+    <span class="chip" id="acct">—</span>
+    <span class="spacer"></span>
+    <div class="search">
+      <span style="color:var(--muted)">⌕</span>
+      <input id="q" placeholder="搜索 / 操作符：sender: subject: after:7d has:attachment status:waiting label:important">
+    </div>
+    <button class="btn" id="briefBtn">今日简报</button>
+    <button class="btn" id="healthBtn">健康</button>
+    <button class="btn primary" id="syncBtn">同步</button>
+  </div>
+
+  <div class="body">
+    <div class="side" id="side"></div>
+    <div class="listwrap">
+      <div class="listhead" id="listhead"></div>
+      <div class="list" id="list"></div>
+      <button class="to-top" id="toTop" title="回到列表最顶端">↑ 回到顶部</button>
+    </div>
+    <div class="detail" id="detail"></div>
+  </div>
+
+  <div class="bar">
+    <span><kbd>j</kbd><kbd>k</kbd> 上下</span>
+    <span><kbd>Enter</kbd> 打开</span>
+    <span><kbd>r</kbd> AI 起草</span>
+    <span><kbd>a</kbd> 归档</span>
+    <span><kbd>s</kbd> 延后</span>
+    <span><kbd>d</kbd> 完成</span>
+    <span><kbd>w</kbd> 等对方</span>
+    <span><kbd>x</kbd> 选中</span>
+    <span><kbd>u</kbd> 撤销</span>
+    <span><kbd>e</kbd> 外部客户端</span>
+    <span><kbd>c</kbd> 写邮件</span>
+    <span><kbd>/</kbd> 搜索</span>
+    <span class="spacer"></span>
+    <span id="statustext"></span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+/* ===================================================================== */
+/* 工具                                                                  */
+/* ===================================================================== */
+const $ = (id) => document.getElementById(id);
+/* API 前缀：独立部署（python -m mail_workbench.server）时为空；
+   嵌进 V1 工作台（server.py）时由桥接层注入 '/api/v2'，避免与 V1 路由撞车。 */
+const API_BASE = (typeof window.MW_API_BASE === "string") ? window.MW_API_BASE : "/api";
+function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function toast(msg, kind){
+  const box=$("toast"); const d=document.createElement("div");
+  d.className = kind||""; d.textContent=msg; box.appendChild(d);
+  setTimeout(()=>{d.style.opacity="0"; setTimeout(()=>d.remove(),400);}, 2800);
+}
+async function api(path, opts){
+  const o = opts||{};
+  o.headers = Object.assign({"Content-Type":"application/json"}, o.headers||{});
+  if(o.body && typeof o.body!=="string") o.body = JSON.stringify(o.body);
+  const r = await fetch(API_BASE + path, o);
+  let j=null; try{ j = await r.json(); }catch(e){}
+  if(!r.ok || (j && j.ok===false)){
+    const m = (j && (j.error||j.message)) || ("HTTP "+r.status);
+    return {ok:false, error:m, code:r.status, raw:j};
+  }
+  return j || {ok:true};
+}
+function fmtTime(iso){
+  if(!iso) return "";
+  const d=new Date(iso), n=new Date();
+  const hm = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  if(d.toDateString()===n.toDateString()) return hm;
+  const md = String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  return md+" "+hm;
+}
+function rel(iso){
+  if(!iso) return "";
+  const s=(Date.now()-new Date(iso).getTime())/1000;
+  if(s<60) return "刚刚";
+  if(s<3600) return Math.floor(s/60)+"分前";
+  if(s<86400) return Math.floor(s/3600)+"时前";
+  return Math.floor(s/86400)+"天前";
+}
+const CLASS_CHIP = {IMPORTANT:"vip",REPLY:"reply",SYSTEM:"system",READ:"read",DISMISS:"dismiss"};
+const CLASS_TEXT = {IMPORTANT:"★ 重点",REPLY:"✉ 要回",SYSTEM:"⚙ 系统",READ:"○ 看一眼",DISMISS:"× 可忽略"};
+/* 批量操作按钮：[动作, 文案]。动作名必须与后端 BATCH_ACTIONS 对齐。 */
+const BATCH_BTNS = [
+  ["archive", "批量归档"], ["ignore", "批量忽略"], ["read", "标为已读"],
+  ["star", "加星标"], ["trash", "批量删除"],
+];
+const BATCH_TEXT = Object.fromEntries(BATCH_BTNS.map(([a, t]) => [a, t]));
+
+/* ===================================================================== */
+/* 状态                                                                  */
+/* ===================================================================== */
+const S = {
+  buckets:{}, bucketCounts:{}, pipeline:{}, workingset:{}, totals:{},
+  /* 档案视图的「仅未读」筛选。默认关，让用户自己开 ——
+     它存在的理由见 loadScope 里的注释：全选只作用于**当前列表**，
+     而未读邮件常常并不在列表首页（实测 INBOX 的 113 封未读全在第 250 名之后），
+     于是「全选 → 标为已读」看起来像完全没生效。 */
+  onlyUnread:false,
+  /* 当前在看什么。三种来源共用同一个列表区：
+       bucket → /buckets（线程级，带工作集语义）
+       folder → /messages?folder=X（邮件级，顺着文件夹翻）
+       tag    → /messages?classification=X（邮件级，按标签翻）
+     为什么不让它们各用一套渲染：用户要的是「点哪儿都是同一个列表」，
+     行外观、快捷键、批处理、详情面板全都应该照旧。 */
+  scope:{type:"bucket", id:"ACTION_REQUIRED"},
+  folders:[], indexCount:0, totalMessages:0, folderItems:[],
+  batchBusy:false,
+  items:[], cur:-1, curItem:null, selected:new Set(),
+  detail:null, job:null, view:"list",  // list | brief | health
+  brief:"", searchMode:false, lastQuery:"", constants:{}, health:null,
+};
+/* 当前视图对应的条目。folder/tag 视图的数据在 S.folderItems。 */
+function scopeItems(){
+  return S.scope.type==="bucket" ? (S.buckets[S.scope.id]||[]) : (S.folderItems||[]);
+}
+function scopeLabel(){
+  if(S.scope.type==="bucket") return (S.constants.buckets||{})[S.scope.id] || S.scope.id;
+  if(S.scope.type==="folder") return "文件夹 · "+S.scope.id;
+  const t = (S.constants.class_tree||[]).find(x=>x.key===S.scope.id);
+  return "标签 · " + (t? t.label : S.scope.id);
+}
+/* 工作桶是「线程」，文件夹/标签是「邮件」—— 量词不同，别混。 */
+function scopeUnit(){ return S.scope.type==="bucket" ? "个线程" : "封邮件"; }
+
+/* ===================================================================== */
+/* 顶栏                                                                  */
+/* ===================================================================== */
+async function loadConstants(){
+  const r = await api("/constants");
+  if(r.ok) S.constants = r.data||{};
+}
+async function loadHealth(){
+  const r = await api("/health");
+  const d = (r.ok? r.data : r) || {};
+  const st = d.status || (r.ok? "healthy":"error");
+  const dot=$("healthDot"); dot.className="dot "+(st==="healthy"?"healthy":(st==="warning"?"warning":"error"));
+  dot.title = "状态："+st+(d.problems&&d.problems.length? " · "+d.problems.join("；"):"");
+  S.health = d;
+  return d;
+}
+async function loadBuckets(){
+  const r = await api("/buckets?limit=120");
+  if(!r.ok){ toast("加载工作桶失败："+r.error,"err"); return; }
+  S.buckets = r.data.buckets||{}; S.bucketCounts = r.data.counts||{}; S.pipeline = r.data.pipeline||{};
+  S.workingset = r.data.workingset||{};
+  S.totals = r.data.totals||{};
+  renderSide();
+}
+async function loadFolders(){
+  const r = await api("/folders");
+  if(!r.ok){ toast("加载文件夹失败："+r.error,"err"); return; }
+  S.folders = r.data.folders||[];
+  S.indexCount = r.data.index_count||0;
+  S.totalMessages = r.data.total_messages||0;
+  renderSide();
+}
+
+/* ===================================================================== */
+/* 侧边栏：写邮件 + 工作桶 + 文件夹 + 标签 + 本地索引                     */
+/*                                                                       */
+/* 布局刻意对齐 V1（写邮件在最上、文件夹树、标签树、底部本地索引），      */
+/* 因为用户的手已经记住了哪个位置是什么 —— 换位置比换配色更伤习惯。      */
+/* ===================================================================== */
+const BUCKET_ICON = {ACTION_REQUIRED:"✉",WAITING_FOR_REPLY:"↻",AI_DRAFT_READY:"✎",SNOOZED:"⏰",DONE_TODAY:"✓",BROADCAST:"📢"};
+const WORK_BUCKETS = ["ACTION_REQUIRED","WAITING_FOR_REPLY","AI_DRAFT_READY","SNOOZED","DONE_TODAY"];
+const FOLDER_ICON = {INBOX:"📥",Drafts:"✏",Sent:"📤",Junk:"🗑",Trash:"🗑"};
+function isActive(type, id){
+  return S.view==="list" && S.scope.type===type && S.scope.id===id;
+}
+/* 计数规则沿用 V1：有未读就显示未读（蓝底），否则显示总数（灰底）。
+   这条规则用户很熟 —— 看到蓝色就知道这个文件夹里有新东西。 */
+function folderCount(f){
+  const u = f.unread||0, t = f.total||0;
+  if(u>0) return `<span class="tree-count is-unread" title="未读">${u}</span>`;
+  return t>0 ? `<span class="tree-count" title="总数">${t}</span>` : "";
+}
+function renderSide(){
+  const el=$("side"); if(!el) return;
+  const labels = S.constants.buckets || {};
+  const hints = S.constants.bucket_hints || {};
+  let h = "";
+
+  h += `<div class="side-head"><button class="compose-btn" id="composeBtn">✏ 写邮件</button></div>`;
+  h += `<div class="tree">`;
+
+  // ---- 工作桶 ----
+  h += `<div class="tree-group-title">工作</div>`;
+  for(const k of WORK_BUCKETS){
+    const n = S.bucketCounts[k]||0;
+    const hot = (k==="ACTION_REQUIRED" && n>0) ? " hot" : "";
+    h += `<div class="bk ${isActive("bucket",k)?"active":""}" data-bk="${k}" title="${esc(hints[k]||"")}">
+      <span>${BUCKET_ICON[k]}</span><span>${esc(labels[k]||k)}</span>
+      <span class="n${hot}">${n}</span></div>`;
+    /* 「等待对方回复」下面挂一行沉底入口。
+       为什么是挂在它下面、而不是单独一段或单独一个桶：
+       沉底的本质是「这个桶的历史积压」，不是一类新的工作。
+       挂在这儿，用户一眼就能读出「8 个在等 + 137 个已经等不来了」的完整事实，
+       既不会因为看不见而误以为邮箱很干净，也不会让数字继续往上堆。
+       注意只在真有沉底时才出现 —— 常驻一个 0 会变成新的噪音。 */
+    if(k==="WAITING_FOR_REPLY"){
+      const ns = S.bucketCounts.STALE_WAIT||0;
+      if(ns>0){
+        const wd = (S.workingset&&S.workingset.waiting_window_days)||0;
+        const txt = wd>0 ? ("超过 "+wd+" 天没回音") : "很久没回音";
+        h += `<div class="bk stale ${isActive("bucket","STALE_WAIT")?"active":""}"
+              data-bk="STALE_WAIT" title="${esc(hints.STALE_WAIT||"")}">
+          <span>·</span><span>${esc(txt)}</span><span class="n">${ns}</span></div>`;
+      }
+    }
+  }
+  // 「仅知会」不是工作桶：群发通知 + 只看一眼的邮件。单独一段，
+  // 让用户一眼看出这些不用动手，同时又能点进去 —— 不算工作，但绝不隐藏。
+  const nb = S.bucketCounts.BROADCAST||0;
+  h += `<div class="bk ${isActive("bucket","BROADCAST")?"active":""}" data-bk="BROADCAST"
+        title="${esc(hints.BROADCAST||"")}"><span>📢</span><span>${esc(labels.BROADCAST||"仅知会")}</span>
+        <span class="n">${nb}</span></div>`;
+
+  // ---- 文件夹（来自 /api/folders：库里有的 ∪ 配置要同步的）----
+  const sys = (S.folders||[]).filter(f=>!f.custom);
+  const cus = (S.folders||[]).filter(f=>f.custom);
+  const fitem = (f)=>`<button class="tree-item ${isActive("folder",f.path)?"is-active":""}" data-folder="${esc(f.path)}">
+      <span class="ti-ico">${FOLDER_ICON[f.path]||"📁"}</span>
+      <span class="ti-name">${esc(f.label||f.path)}</span>${folderCount(f)}</button>`;
+  if(sys.length){
+    h += `<div class="tree-group-title">文件夹</div>` + sys.map(fitem).join("");
+  }
+  if(cus.length){
+    h += `<div class="tree-group-title">自建文件夹</div>` + cus.map(fitem).join("");
+  }
+
+  // ---- 标签（分类）：名称与圆点色由后端常量给，UI 不硬编码 ----
+  const tree = S.constants.class_tree||[];
+  if(tree.length){
+    h += `<div class="tree-group-title">标签</div>`;
+    h += tree.map(t=>`<button class="tree-item ${isActive("tag",t.key)?"is-active":""}" data-tag="${esc(t.key)}"
+        title="按分类筛选（分类与工作流状态是两回事）">
+        <span class="ti-ico"><span class="tag-dot" style="background:${esc(t.dot||"#3a66ac")}"></span></span>
+        <span class="ti-name">${esc(t.label||t.key)}</span></button>`).join("");
+  }
+
+  // ---- 草稿流水线（只在有活跃任务时出现，平时不占位）----
+  const p = S.pipeline||{};
+  if((p.queued||0)+(p.generating||0)+(p.needs_input||0)+(p.ready||0)+(p.approved||0)){
+    h += `<div class="tree-group-title">草稿流水线</div>`;
+    h += `<div class="mini"><span>排队/起草中</span><b>${(p.queued||0)+(p.generating||0)}</b></div>`;
+    h += `<div class="mini"><span>缺信息</span><b>${p.needs_input||0}</b></div>`;
+    h += `<div class="mini"><span>待审核</span><b>${p.ready||0}</b></div>`;
+    h += `<div class="mini"><span>待发送</span><b>${p.approved||0}</b></div>`;
+  }
+  h += `</div>`;
+
+  // ---- 底部：本地索引（V1 的「N 封可检索」）----
+  h += `<div class="side-foot" title="Foxmail 历史索引（只读导入）+ IMAP 已同步邮件">
+      📚 本地索引 <b>${S.indexCount}</b> 封可检索<br>
+      <span style="opacity:.8">库内合计 ${S.totalMessages} 封 · ${(S.totals||{}).threads||0} 个线程</span>
+    </div>`;
+
+  el.innerHTML = h;
+
+  const cb = $("composeBtn"); if(cb) cb.onclick = openCompose;
+  el.querySelectorAll("[data-bk]").forEach(n=>n.onclick=()=>setScope("bucket", n.dataset.bk));
+  el.querySelectorAll("[data-folder]").forEach(n=>n.onclick=()=>setScope("folder", n.dataset.folder));
+  el.querySelectorAll("[data-tag]").forEach(n=>n.onclick=()=>setScope("tag", n.dataset.tag));
+}
+function setScope(type, id){
+  S.scope = {type, id};
+  S.view = "list"; S.searchMode = false; S.selected.clear();
+  renderSide(); loadScope();
+}
+
+/* ===================================================================== */
+/* 写邮件（人工起草）                                                     */
+/*                                                                       */
+/* 硬边界：AI 可以做 draft/rewrite/summarize，**不可以 send**。           */
+/* 所以两条入口分开：                                                     */
+/*   「存入草稿箱」→ POST /compose/draft （只写 IMAP 草稿箱）             */
+/*   「发送」      → 弹二次确认 → POST /compose/send {confirm:"SEND"}     */
+/* confirm 字段是服务端强制的第二道闸（防脚本/AI 误触），不是走过场。     */
+/* ===================================================================== */
+function openCompose(prefill){
+  const p = prefill||{};
+  const root = $("modalRoot");
+  root.innerHTML = `<div class="modal" id="composeModal">
+    <div class="mbox">
+      <div class="mhead">✏ 写邮件<span class="spacer"></span>
+        <button class="btn sm ghost" data-m="cancel">关闭</button></div>
+      <div class="mbody">
+        <div class="field"><label>收件人（多个用逗号分隔）</label>
+          <input id="cTo" placeholder="name@sjtu.edu.cn" value="${esc(p.to||"")}"></div>
+        <div class="field"><label>主题</label>
+          <input id="cSubject" placeholder="（无主题）" value="${esc(p.subject||"")}"></div>
+        <div class="field"><label>正文</label>
+          <textarea id="cBody" placeholder="正文…">${esc(p.body||"")}</textarea></div>
+      </div>
+      <div class="mfoot">
+        <span class="mhint">「发送」会立刻发出且无法撤回；「存入草稿箱」只存不发</span>
+        <span class="spacer"></span>
+        <button class="btn ghost" data-m="cancel">取消</button>
+        <button class="btn" data-m="draft">存入草稿箱</button>
+        <button class="btn primary" data-m="send">发送</button>
+      </div>
+    </div></div>`;
+  root.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>composeAction(b.dataset.m, b));
+  const t = $("cTo"); if(t) t.focus();
+}
+function closeCompose(){ const r=$("modalRoot"); if(r) r.innerHTML=""; }
+async function composeAction(kind, btn){
+  if(kind==="cancel"){ closeCompose(); return; }
+  const to = ($("cTo")||{}).value || "";
+  const subject = ($("cSubject")||{}).value || "";
+  const body = ($("cBody")||{}).value || "";
+  if(!to.trim()){ toast("请先填收件人","warn"); return; }
+  if(!body.trim()){ toast("正文还是空的","warn"); return; }
+  if(kind==="send"){
+    // 二次确认：这一下点下去信就出去了，没有撤回
+    if(!window.confirm("确定立即发送给：\n"+to+"\n\n（发送后无法撤回）")) return;
+  }
+  const old = btn.textContent; btn.disabled = true;
+  btn.textContent = kind==="send" ? "发送中…" : "保存中…";
+  try{
+    const r = await api(kind==="send" ? "/compose/send" : "/compose/draft",
+      {method:"POST", body:{to, subject, body, confirm: kind==="send" ? "SEND" : ""}});
+    if(!r.ok){ toast(r.error||"失败","err"); return; }
+    toast(r.data.message || (kind==="send" ? "已发送" : "已存入草稿箱"),"ok");
+    closeCompose();
+    // 发信/存草稿都会改变「已发送」「草稿箱」的内容，刷新一次侧边栏计数；
+    // 顺带轻量同步一次 Sent，让线程的「等对方回复」立刻准确。
+    loadFolders();
+    if(kind==="send"){
+      api("/sync",{method:"POST", body:{folders:["Sent"], limit:20}}).catch(()=>{});
+      loadBuckets();
+    }
+  }catch(err){
+    toast("操作失败："+err,"err");
+  }finally{
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+/* ===================================================================== */
+/* 列表                                                                  */
+/* ===================================================================== */
+/* 按当前 scope 载入列表。三种来源共用这一条路径：
+     bucket → /buckets 里的对应桶
+     folder → /messages?folder=X
+     tag    → /messages?classification=X
+   空文件夹也要正常显示「没有邮件」，不能因为 0 封就报错。 */
+async function loadScope(){
+  if(S.scope.type==="bucket"){
+    // limit 给到 500：沉底区可能有上百条（历史沉降），200 会截断成「看起来只有 200」
+    const r = await api("/buckets?limit=500");
+    if(r.ok){ S.buckets=r.data.buckets||{}; S.bucketCounts=r.data.counts||{};
+              S.pipeline=r.data.pipeline||{}; S.workingset=r.data.workingset||{}; }
+    S.items = S.buckets[S.scope.id]||[];
+    renderSide();
+  }else{
+    /* 档案视图（文件夹 / 标签）。
+       注意「全选」只作用于**当前列表**，而列表是 LIMIT 200 的首页 ——
+       未读邮件常常并不在首页里。实测：INBOX 有 113 封未读，全部排在第 250 名之后，
+       用户「全选 → 标为已读」于是精确地选中了一批本来就已读的邮件，
+       数字纹丝不动，看起来像功能坏了。所以这里提供 unread=1 的筛选，
+       让「处理未读」变成一件真能直接做到的事。 */
+    const q = (S.scope.type==="folder"
+      ? "/messages?limit=200&folder="+encodeURIComponent(S.scope.id)
+      : "/messages?limit=200&classification="+encodeURIComponent(S.scope.id))
+      + (S.onlyUnread ? "&unread=1" : "");
+    const r = await api(q);
+    if(!r.ok){ toast("加载失败："+r.error,"err"); S.items=[]; S.folderItems=[]; }
+    else{
+      S.folderItems = (r.data.messages||[]).map(m=>({
+        message_id:m.message_id, thread_id:m.thread_id, subject:m.subject,
+        from_name:m.from_name, from_addr:m.from_addr, date_iso:m.date_iso,
+        snippet:m.snippet, classification:m.classification, workflow_state:m.workflow_state,
+        unread:!!m.unread, has_attachments:!!m.has_attachments,
+        broadcast:!!m.broadcast, message_count:1,
+      }));
+      S.folderTotal = r.data.total;
+      S.items = S.folderItems;
+    }
+  }
+  S.cur=-1; S.curItem=null;
+  // 换视图/换文件夹要回到顶端 —— 否则从滚到一半的旧列表切过来，
+  // 会停在新列表的中间，看起来像「列表错位」。
+  const l=$("list"); if(l) l.scrollTop = 0;
+  renderList();
+  if(S.items.length) select(0,false);
+}
+function renderList(){
+  const head=$("listhead");
+  const cnt = S.selected.size;
+  const total = S.items.length;
+  const truncated = S.scope.type!=="bucket" && S.folderTotal>total;
+  /* 全选控件放在最左，和每行第一个复选框同一列 —— 位置对得上，
+     用户不用想「全选在哪」。三态：全选 / 部分选 / 未选。
+
+     title 里必须写清「当前列表」与条数：**全选不等于全选整个文件夹**。
+     实测用户以为全选 = 全选 INBOX（4031 封），实际只选中列表里的 200 封，
+     而那 200 封碰巧全是已读的，于是「标为已读」看起来完全没生效。 */
+  const selBox = total ? `<label class="selall ${cnt?"on":""}" title="${
+      cnt===total ? "取消全选" : "全选当前列表（"+total+" 封）"}">
+      <input type="checkbox" id="selAllChk" ${cnt===total?"checked":""}>
+      <span>${cnt===total? "取消全选" : "全选"}</span></label>` : "";
+
+  /* 「仅未读」开关。
+     存在的唯一理由：让「把未读清掉」变成一件真能直接做到的事。
+     列表是 LIMIT 200 的首页，而未读常常根本不在首页 ——
+     实测 INBOX 的 113 封未读全部排在第 250 名之后，用户全选标记自然毫无变化。
+     只在文件夹视图、且确实有未读（或已经开着筛选）时才出现，不常驻占位。 */
+  const curFolder = (S.folders||[]).find(x=>x.path===S.scope.id);
+  const unreadN = curFolder ? (curFolder.unread||0) : 0;
+  const unreadBtn = (S.scope.type==="folder" && (unreadN>0 || S.onlyUnread))
+    ? `<button class="btn sm ghost" id="unreadOnly" title="${
+        S.onlyUnread ? "显示全部邮件" : "只列出未读邮件（推荐的清未读方式）"}">${
+        S.onlyUnread ? "↩ 显示全部" : "仅未读 "+unreadN}</button>` : "";
+
+  head.innerHTML = selBox +
+    `<b>${esc(scopeLabel())}</b> · ${total} ${S.onlyUnread? "封未读" : scopeUnit()}` +
+    (truncated
+      ? ` <span style="color:var(--muted)">（共 ${S.folderTotal} 封，显示前 ${total}）</span>`:"") +
+    unreadBtn +
+    (cnt? ` · <span style="color:var(--accent)">已选 ${cnt}</span>`:"") +
+    (cnt? `<span class="spacer"></span>` + BATCH_BTNS.map(([a, t]) =>
+      `<button class="btn sm${a==="trash"?" danger":""}" data-b="${a}"${
+        S.batchBusy?" disabled":""}>${t}</button>`).join("") +
+      `<button class="btn sm ghost" id="clearSel"${S.batchBusy?" disabled":""}>取消选择</button>`:"");
+  const chk = $("selAllChk");
+  if(chk){
+    // 部分选中：复选框画成「横杠」，否则用户看不出「选了一半」
+    chk.indeterminate = cnt>0 && cnt<total;
+    chk.onchange = ()=>toggleSelectAll();
+  }
+  if(cnt){
+    head.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>batchApply(b.dataset.b));
+    const c=$("clearSel"); if(c) c.onclick=()=>{S.selected.clear(); renderList(); renderSide();};
+  }
+  const ub=$("unreadOnly");
+  if(ub) ub.onclick=()=>{
+    // 切筛选要清空选择：原来选中的邮件多半不在新列表里了，
+    // 留着它们会让「已选 N」和眼睛看到的对不上。
+    S.onlyUnread=!S.onlyUnread; S.selected.clear(); loadScope();
+  };
+  const el=$("list");
+  if(!total){
+    el.innerHTML = `<div class="empty"><b>这里没有邮件</b>${
+      S.scope.type==="bucket" ? "没有需要你在这个桶里处理的东西。" : "这个文件夹是空的，或还没同步过。"}</div>`;
+    syncToTop();
+    return;
+  }
+  el.innerHTML = S.items.map((it,i)=>{
+    const job = it.job_status? `<span class="chip ${it.job_status==="needs_input"?"warn":"job"}">${esc(it.job_status_label||it.job_status)}</span>`:"";
+    const miss = it.missing_count? `<span class="chip warn">缺${it.missing_count}项</span>`:"";
+    const cls = it.classification? `<span class="chip ${CLASS_CHIP[it.classification]||""}">${esc(CLASS_TEXT[it.classification]||it.classification)}</span>`:"";
+    return `<div class="row ${it.unread?"unread":""} ${S.selected.has(it.message_id)?"sel":""} ${i===S.cur?"cur":""}" data-i="${i}">
+      <div class="chk ${S.selected.has(it.message_id)?"on":""}" data-chk="${i}"></div>
+      <div class="maincol">
+        <div class="sub">${esc(it.subject||"(无主题)")}</div>
+        <div class="sum">${esc(it.snippet||"")}</div>
+        <div class="chips">${cls}${job}${miss}${it.broadcast?'<span class="chip">📢 群发通知</span>':""}${it.message_count>1?`<span class="chip">${it.message_count} 封</span>`:""}${it.has_attachments?'<span class="chip att">附件</span>':""}${it.wake_at?`<span class="chip">⏰ ${esc(fmtTime(it.wake_at))}</span>`:""}</div>
+      </div>
+      <div class="col fromcol">${esc(it.from_name||it.from_addr||"")}</div>
+      <div class="right"><span class="col">${esc(fmtTime(it.date_iso))}</span></div>
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".row").forEach(row=>{
+    const i = +row.dataset.i;
+    row.onclick = (e)=>{
+      if(e.target.dataset.chk!==undefined){ toggleSel(i); return; }
+      select(i,true);
+    };
+  });
+  syncToTop();   // 「回到顶部」的显隐跟着列表走，重绘后要重算
+}
+function toggleSel(i){
+  const it=S.items[i]; if(!it) return;
+  if(S.selected.has(it.message_id)) S.selected.delete(it.message_id); else S.selected.add(it.message_id);
+  renderList();
+}
+/* 全选 / 取消全选：操作的是**当前列表**（S.items）里的邮件。
+   已经是全选状态再点一下就取消 —— 与 V1 的「全选 N / 取消」两按钮等效，
+   但只占一个控件。 */
+function toggleSelectAll(){
+  const ids = S.items.map(x=>x.message_id).filter(Boolean);
+  const allSel = ids.length>0 && ids.every(id=>S.selected.has(id));
+  if(allSel){
+    ids.forEach(id=>S.selected.delete(id));
+    toast("已取消选择","ok");
+  }else{
+    ids.forEach(id=>S.selected.add(id));
+    toast(`已全选 ${ids.length} ${scopeUnit()}`,"ok");
+  }
+  renderList(); renderSide();
+}
+/* 回到顶部：滚过一屏多才淡入。
+   显隐必须在每次列表重绘后重算（同 V1 的教训：按钮/内容一起重建，
+   只看 DOM 状态会出现「重绘一次按钮就不见了」）。 */
+const TO_TOP_AFTER = 600;
+function syncToTop(){
+  const sc = $("list"), btn = $("toTop");
+  if(!sc || !btn) return;
+  btn.classList.toggle("is-show", sc.scrollTop > TO_TOP_AFTER);
+}
+function select(i, open){
+  S.cur=i; S.curItem=S.items[i]||null;
+  renderList();
+  if(S.curItem) openDetail(S.curItem, open!==false);
+}
+
+/* ===================================================================== */
+/* 附件                                                                  */
+/* ===================================================================== */
+function attChip(a){
+  const kb = Math.round((a.size_bytes||0)/1024);
+  const size = kb >= 1024 ? (kb/1024).toFixed(1)+"MB" : kb+"KB";
+  const dl = a.downloaded ? "已下载" : "";
+  // 历史邮件只有元数据、没有附件内容 -> 不给点，并说明原因，别让用户点了才报错
+  if(!a.downloadable){
+    return `<span class="chip att off" title="Foxmail 历史记录只有元数据，不含附件内容">
+      📎 ${esc(a.filename)} · ${size} · 不可下载</span>`;
+  }
+  return `<span class="attbox">
+      <button class="chip att act" data-att-open="${esc(a.attachment_id)}"
+              title="下载并用系统默认程序打开${dl?"（已在本地，秒开）":""}">📎 ${esc(a.filename)}</button>
+      <span class="attsz">${size}</span>
+      <button class="chip mini-btn" data-att-dl="${esc(a.attachment_id)}" title="只下载，不打开">⤓</button>
+      <button class="chip mini-btn" data-att-hold="${esc(a.attachment_id)}" title="下载并在文件管理器里定位">📂</button>
+    </span>`;
+}
+function bindAttachments(){
+  const host = $("detail"); if(!host) return;
+  host.querySelectorAll("[data-att-open]").forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation(); attAction("open", b.dataset.attOpen, b);
+  });
+  host.querySelectorAll("[data-att-dl]").forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation(); attAction("download", b.dataset.attDl, b);
+  });
+  host.querySelectorAll("[data-att-hold]").forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation(); attAction("reveal", b.dataset.attHold, b);
+  });
+}
+async function attAction(kind, aid, btn){
+  const old = btn? btn.textContent : "";
+  try{
+    if(kind === "download"){
+      // 走浏览器原生下载：aid 必须 encodeURIComponent —— 附件 id 含原始文件名，
+      // 直接拼进 URL 会因中文/斜杠而失效。
+      const url = API_BASE + "/attachments/download?aid=" + encodeURIComponent(aid);
+      const a = document.createElement("a");
+      a.href = url; a.download = ""; document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      toast("已开始下载（保存在浏览器下载目录）","ok");
+      return;
+    }
+    if(btn){ btn.disabled = true; btn.textContent = "📎 处理中…"; }
+    // 打开/定位走 JSON body，避开路径段编码问题
+    const r = await api("/attachments/"+kind, {method:"POST", body:{attachment_id: aid}});
+    if(!r.ok){ toast(r.error||"操作失败","err"); return; }
+    if(kind === "open") toast(r.data.message || "已用默认程序打开","ok");
+    else toast(r.data.message || "已在文件管理器里定位","ok");
+  }catch(err){
+    toast("操作失败："+err,"err");
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = old; }
+  }
+}
+
+/* ===================================================================== */
+/* 详情 + 草稿面板                                                       */
+/* ===================================================================== */
+async function openDetail(item, withBody=true){
+  const el=$("detail");
+  el.innerHTML = `<div class="empty">载入中…</div>`;
+  const mid = item.message_id;
+  if(!mid){ el.innerHTML=`<div class="empty">该线程没有可展示的邮件</div>`; return; }
+  const r = await api("/messages/"+encodeURIComponent(mid));
+  if(!r.ok){ el.innerHTML=`<div class="empty">载入失败：${esc(r.error)}</div>`; return; }
+  const m = r.data;
+  S.detail = m;
+  const job = (m.jobs&&m.jobs[0]) || null;
+  S.job = job;
+  const cls = m.classification? `<span class="chip ${CLASS_CHIP[m.classification]}">${esc(CLASS_TEXT[m.classification])}</span>`:"";
+  const atts = (m.attachments||[]).map(a=>attChip(a)).join(" ");
+  el.innerHTML = `
+    <div class="dhead">
+      <h2>${esc(m.subject||"(无主题)")}</h2>
+      <div class="meta">
+        <div><b>发件人</b>：${esc(m.from_name||"")} &lt;${esc(m.from_addr)}&gt;</div>
+        <div><b>收件人</b>：${esc((m.to_addrs||[]).join(", "))}</div>
+        <div><b>时间</b>：${esc(m.date_iso? new Date(m.date_iso).toLocaleString("zh-CN"):"")}</div>
+        <div style="margin-top:6px">${cls}
+          ${m.unread?'<span class="chip">未读</span>':""}
+          ${m.answered?'<span class="chip">服务器已回复</span>':""}
+          ${m.flagged?'<span class="chip">★ 星标</span>':""}
+          <span class="chip">${esc(m.workflow_state||"NEW")}</span>
+          ${m.source==="foxmail"?'<span class="chip">Foxmail 历史（仅元数据）</span>':""}
+        </div>
+        ${atts? `<div style="margin-top:6px">${atts}</div>`:""}
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary sm" data-a="reply_ai">✎ AI 起草</button>
+      <button class="btn sm" data-a="reply_fast" title="本地模板即时出稿（不调用模型，毫秒级返回）">⚡ 快速草稿</button>
+      <button class="btn sm" data-a="reply_manual">人工回复</button>
+      <button class="btn sm" data-a="archive">归档</button>
+      <button class="btn sm" data-a="snooze">延后</button>
+      <button class="btn sm" data-a="waiting">等对方</button>
+      <button class="btn sm" data-a="done">完成</button>
+      <button class="btn sm" data-a="ignore">忽略</button>
+      <button class="btn sm" data-a="star">星标</button>
+      <button class="btn sm" data-a="unread">未读</button>
+      <button class="btn sm danger" data-a="trash">删除</button>
+      <button class="btn sm ghost" data-a="open_external">外部客户端</button>
+    </div>
+    <div class="dscroll"><pre>${esc(m.body_text||"（此封无正文文本；若是 Foxmail 历史邮件，正文需联网按需拉取）")}</pre></div>
+    <div id="jobpanel"></div>`;
+  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>doAction(b.dataset.a, m));
+  bindAttachments();
+  renderJobPanel();
+}
+
+function renderJobPanel(){
+  const host = $("jobpanel"); if(!host) return;
+  const m = S.detail, j = S.job;
+  if(!j){
+    host.innerHTML = `<div class="panel"><div class="ph">✎ AI 草稿</div>
+      <div class="pb" style="color:var(--muted);font-size:12.5px">
+        还没有草稿任务。点上方「AI 起草」会把任务排进 DraftJobQueue，
+        WorkBuddy 认领后才生成 —— 页面不会阻塞等待模型。
+      </div></div>`;
+    return;
+  }
+  const st=j.status;
+  const meta = S.constants.draft_modes||["quick","normal","detailed","formal","academic"];
+  const ctrls = S.constants.reply_controls||{};
+  let h = `<div class="panel"><div class="ph">
+      <span class="status ${esc(st)}">${esc(j.status_label||st)}</span>
+      <span style="font-weight:400;color:var(--muted)">${esc(j.draft_mode||"normal")}</span>
+      <span class="spacer"></span>
+      <span style="font-weight:400;color:var(--muted)">重试 ${j.retry_count||0}${j.claimed_by? " · 租约 "+esc(j.claimed_by):""}</span>
+    </div><div class="pb">`;
+
+  /* queued = 还没有任何 Worker 认领它。
+     这里必须说清楚，因为界面上的「AI 起草」很容易让人以为草稿在后台生成 ——
+     实际队列是**拉模式**：没人来认领，它就永远停在这一步。
+     实测用户点完等了五分钟，界面上没有任何东西告诉他「在等什么」。 */
+  if(st==="queued"){
+    h += `<div class="miss"><h4>等待认领 —— 还没有 Worker 接手</h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.75">
+        草稿<b>不是服务自动生成的</b>。这里只做了一件事：把任务放进队列
+        （谁都没处理，所以显示「等待认领」）。<br>
+        需要一个 Worker 主动认领才会开始起草 —— 在 WorkBuddy 里说一句
+        「处理邮件草稿队列」，它就会接手；否则任务会一直停在这里，等再久也一样。
+      </div></div>`;
+  }
+
+  if(st==="needs_input" && (j.missing_information||[]).length){
+    h += `<div class="miss"><h4>草稿需要你的信息（AI 不会编造）</h4>`;
+    (j.missing_information||[]).forEach((mi,i)=>{
+      const k = mi.key||("k"+i), lab = mi.label||mi.text||k;
+      h += `<div class="item"><span>□</span><span style="flex:none;min-width:150px">${esc(lab)}</span>
+        <input data-mi="${esc(k)}" placeholder="填写后点「提交并继续」"></div>`;
+    });
+    h += `<div style="margin-top:8px"><button class="btn primary sm" id="submitInput">提交并继续起草</button>
+      <span style="color:var(--muted);margin-left:8px">提交后任务重回队列，WorkBuddy 会带着这些信息重新起草。</span></div></div>`;
+  }
+
+  /* 已经发出去之后，草稿就只是**一条记录**，不再是待办的草稿。
+     用户反馈的困惑就在这儿：发送成功后页面原样不动，草稿框还能打字、
+     下面还摆着「快捷改写」—— 让人怀疑「这封到底发出去没有」。
+     所以 sent 之后：框只读、去掉「保存修改」、明确标出发送时间。 */
+  const sentDone = (st==="sent");
+  if(j.draft_text){
+    h += `<textarea class="draft" id="draftText"${sentDone?" readonly":""}>${esc(j.draft_text)}</textarea>`;
+    h += `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      ${sentDone? "" : `<button class="btn sm" id="saveEdit">保存修改</button>`}
+      <button class="btn sm" id="copyDraft">复制正文</button>
+      ${j.edit_ratio!=null? `<span style="color:var(--muted);align-self:center">编辑比例 ${(j.edit_ratio*100).toFixed(0)}%</span>`:""}
+      ${sentDone? `<span style="align-self:center;color:#2e7d32">✓ 已于 ${esc(fmtTime(j.sent_at))} 发出</span>`:""}
+    </div>`;
+    /* 快速草稿：给一排模板按钮，点一下换一篇。
+       自动匹配难免选错（把「申请名额」认成「稍后答复」之类），
+       所以「换」必须是一步就能做到的事，而不是让人自己重写。 */
+    if(j.trigger_source==="fast_template" && !sentDone){
+      const tpls = (S.constants&&S.constants.draft_templates)||[];
+      if(tpls.length){
+        h += `<div style="margin-top:10px">
+          <div style="font-size:11.5px;color:var(--muted);margin-bottom:5px">
+            快速草稿模板（点一下换一篇）：</div>
+          <div class="ctrlrow">${tpls.map(t=>
+            `<button class="btn sm" data-tpl="${esc(t.kind)}" title="${esc(t.hint||"")}">${esc(t.label)}</button>`
+          ).join("")}</div></div>`;
+      }
+    }
+  } else {
+    h += `<div style="color:var(--muted);font-size:12.5px;padding:6px 0">
+      草稿尚未生成（状态：${esc(st)}）。WorkBuddy 认领后会通过 Worker 契约回填。</div>`;
+  }
+
+  /* 已发出的草稿不再提供「换模式 / 快捷改写」——
+     那些操作会派生新任务，对一封已经寄出的信毫无意义，
+     留在界面上只会让人以为「还能改、是不是没发出去」。 */
+  if(!sentDone){
+    h += `<div style="margin-top:12px">
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:5px">模式（一键切换）</div>
+    <div class="ctrlrow">${meta.map(k=>`<button class="btn sm ${j.draft_mode===k?"primary":""}" data-mode="${k}">${esc(k)}</button>`).join("")}</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:5px">快捷改写（不必自己写 prompt）</div>
+    <div class="ctrlrow">${Object.keys(ctrls).map(k=>`<button class="btn sm" data-ctrl="${k}">${esc(k)}</button>`).join("")}</div>
+  </div>`;
+  }
+
+  h += `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">`;
+  /* 这里原来有一个「进入审核」按钮，已删除。两个原因：
+     ① 它挂的事件是 `revise(control="fix_typo")` —— 名字叫审核，干的却是**派生出
+        一个改写任务并把当前草稿标记为「被取代」**。用户点一下，刚生成的草稿就在
+        界面上消失了（实测事件的 note 就是「被新版本取代（superseded）」）。
+     ② 即便实现对了也多余：点「确认发送」时后端会自动 ready → reviewing → approved
+        （job_events 里的 note 是「自动进入审核」），不存在必须手动进审核的步骤。
+     结论：一个既没说清意图、又会破坏数据的按钮，删掉比修好更对。 */
+  if(j.can&&j.can.can_approve) h += `<button class="btn primary" id="approveBtn">确认发送（生成令牌）</button>`;
+  if(j.can&&j.can.can_send) h += `<button class="btn primary" id="sendBtn">真正发送</button>
+     <button class="btn sm" id="revokeBtn">撤回确认</button>`;
+  if(j.can&&j.can.can_dismiss) h += `<button class="btn sm danger" id="dismissBtn">放弃草稿</button>`;
+  h += `<span class="spacer"></span><span style="color:var(--muted);font-size:11.5px">
+     AI 永不自动发送：必须经过「确认 → 带令牌发送」两步</span>`;
+  h += `</div>`;
+
+  if(j.last_error) h += `<div style="margin-top:8px;color:var(--err);font-size:12px">最近错误：${esc(j.last_error)}</div>`;
+
+  h += `</div></div>`;
+  host.innerHTML = h;
+
+  const si=$("submitInput");
+  if(si) si.onclick=()=>{
+    const answers={};
+    host.querySelectorAll("[data-mi]").forEach(inp=>{ if(inp.value.trim()) answers[inp.dataset.mi]=inp.value.trim(); });
+    if(!Object.keys(answers).length){ toast("请至少填写一项","warn"); return; }
+    api("/drafts/"+j.job_id+"/input",{method:"POST",body:{user_input:answers}})
+      .then(r=>{ if(r.ok){ toast("已提交，任务重新入队","ok"); refreshDetail(); } else toast(r.error,"err"); });
+  };
+  host.querySelectorAll("[data-tpl]").forEach(b=>b.onclick=()=>{
+    api("/drafts/fast",{method:"POST",body:{message_id:j.message_id, kind:b.dataset.tpl}})
+      .then(r=>{
+        if(r.ok){ toast("已换成「"+((r.template||{}).label||"")+"」模板","ok"); refreshDetail(); }
+        else toast(r.error,"err");
+      });
+  });
+  const se=$("saveEdit");
+  if(se) se.onclick=()=>{
+    api("/drafts/"+j.job_id+"/edit",{method:"POST",body:{draft_text:$("draftText").value}})
+      .then(r=>{ if(r.ok){ toast("已保存修改","ok"); refreshDetail(); } else toast(r.error,"err"); });
+  };
+  const cd=$("copyDraft");
+  if(cd) cd.onclick=()=>{ navigator.clipboard.writeText($("draftText").value).then(()=>toast("已复制正文","ok")); };
+  host.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{
+    api("/drafts/"+j.job_id+"/mode",{method:"POST",body:{draft_mode:b.dataset.mode}})
+      .then(r=>{ if(r.ok) refreshDetail(); });
+  });
+  host.querySelectorAll("[data-ctrl]").forEach(b=>b.onclick=()=>{
+    const c=b.dataset.ctrl;
+    if(c==="regenerate"){
+      api("/drafts/"+j.job_id+"/revise",{method:"POST",body:{control:c}})
+        .then(r=>{ if(r.ok){ toast("已重新排队生成新版","ok"); refreshDetail(); } else toast(r.error,"err"); });
+      return;
+    }
+    api("/drafts/"+j.job_id+"/revise",{method:"POST",body:{control:c}})
+      .then(r=>{ if(r.ok){ toast("已派生新版任务（"+c+"）","ok"); refreshDetail(); } else toast(r.error,"err"); });
+  });
+  const ab=$("approveBtn");
+  if(ab) ab.onclick=()=>{
+    api("/drafts/"+j.job_id+"/approve",{method:"POST",body:{}}).then(r=>{
+      if(!r.ok){ toast(r.error,"err"); return; }
+      S.approveToken = r.data.approve_token;
+      toast("已确认。令牌有效期至 "+r.data.expires_at+"，再点一次「真正发送」才投递","warn");
+      refreshDetail();
+    });
+  };
+  const sb=$("sendBtn");
+  if(sb) sb.onclick=()=>{
+    if(!S.approveToken){ toast("请先点「确认发送」拿到令牌","warn"); return; }
+    if(!confirm("确认真的发出这封邮件？")) return;
+    api("/drafts/"+j.job_id+"/send",{method:"POST",
+      body:{approve_token:S.approveToken, confirm:"SEND"}}).then(r=>{
+      if(!r.ok){ toast("发送失败："+r.error,"err"); return; }
+      const sentMid=(S.detail||j||{}).message_id;
+      toast("已发送"+(r.data.appended_to_sent?"并写入已发送":"（写入已发送失败）"),"ok");
+      S.approveToken=null;
+      /* 先刷新到「已发送」终态，再自动移到下一封 ——
+         顺序不能反：要先让用户看见「发出去了」，再把他带走。 */
+      (async()=>{
+        await refreshAll();
+        await refreshDetail();
+        if(!advanceAfterSend(sentMid)){
+          toast("这个视图里没有下一封了（可以回「待我处理」继续）","warn");
+        }
+      })();
+    });
+  };
+  const rb=$("revokeBtn");
+  if(rb) rb.onclick=()=>{ api("/drafts/"+j.job_id+"/revoke",{method:"POST",body:{}})
+    .then(()=>{S.approveToken=null; toast("已撤回确认","warn"); refreshDetail();}); };
+  const db=$("dismissBtn");
+  if(db) db.onclick=()=>{ api("/drafts/"+j.job_id+"/dismiss",{method:"POST",body:{}})
+    .then(()=>{ toast("已放弃草稿","warn"); refreshDetail(); refreshAll(); }); };
+}
+/* 发送之后自动移到下一封。
+   用户的反馈原话：「点击真正发送后，还停在这个页面」——
+   一件事做完却不动，人就得自己判断「到底成没成、下一步去哪」。
+   这里在当前视图内往前找一封；循环一圈都只有它自己就返回 false，
+   由调用方去提示「这个视图处理完了」。 */
+function advanceAfterSend(sentMid){
+  const items=S.items||[];
+  if(items.length<2) return false;
+  const at=items.findIndex(x=>x.message_id===sentMid);
+  const rest=(at>=0 ? items.slice(at+1).concat(items.slice(0,at)) : items.slice())
+    .filter(x=>x.message_id!==sentMid);
+  const next=rest[0];
+  if(!next) return false;
+  openDetail(next, true);
+  return true;
+}
+async function refreshDetail(){
+  if(!S.curItem) return;
+  await openDetail(S.curItem, false);
+}
+
+/* ===================================================================== */
+/* 动作                                                                  */
+/* ===================================================================== */
+const SNOOZE_PRESETS = [["later_today","今天稍后"],["tomorrow","明天"],["next_week","下周"],["+3d","3 天后"]];
+async function doAction(a, m){
+  const mid = m.message_id;
+  if(a==="snooze"){
+    const when = prompt("延后到？（later_today / tomorrow / next_week / +3d / 2026-09-25）","tomorrow");
+    if(!when) return;
+    const r = await api("/actions",{method:"POST",body:{action:"snooze",message_id:mid,when:when}});
+    toast(r.ok? ("已延后到 "+(r.data.snooze.wake_at||when)) : r.error, r.ok?"ok":"err");
+    return afterAction(mid);
+  }
+  if(a==="open_external"){
+    const r = await api("/actions",{method:"POST",body:{action:"open_external",message_id:mid}});
+    toast(r.ok? (r.data.hint||"已生成外部入口") : r.error, r.ok?"":"err");
+    return;
+  }
+  if(a==="reply_fast"){
+    /* 本地模板即时出稿 —— 不走队列、不调模型，所以不存在「等认领」。
+       日常邮件里大量回复属于「收到确认 / 婉拒 / 索取材料」，
+       让它们去排 AI 队列要等几十秒到不确定，模板直接给。 */
+    const r = await api("/drafts/fast",{method:"POST",body:{message_id:mid}});
+    if(r.ok){
+      const t = r.template||{};
+      const miss = (t.missing_slots||[]).length;
+      toast("已用「"+(t.label||"模板")+"」生成草稿"
+            + (t.auto? "（自动匹配，可换）" : "")
+            + (miss? "；有 "+miss+" 处标了「请补充」，需要你填" : "，可直接用"),
+            miss? "warn" : "ok");
+      refreshDetail(); refreshAll();
+    } else toast(r.error,"err");
+    return;
+  }
+  if(a==="reply_ai"){
+    /* 注意路径是 /draft-jobs，不是 /drafts。
+       后端只有「创建任务」用 /draft-jobs，而 /drafts/{job_id}/... 是**对已有任务**
+       的操作 —— 少了 job_id 段就落到「路由未实现」，用户看到的就是那句报错。 */
+    const r = await api("/draft-jobs",{method:"POST",body:{message_id:mid,trigger:"manual"}});
+    if(r.ok){ toast("已排入草稿队列（"+r.data.status+"），WorkBuddy 认领后生成","ok"); refreshDetail(); refreshAll(); }
+    else toast(r.error,"err");
+    return;
+  }
+  if(a==="reply_manual"){
+    const r = await api("/actions",{method:"POST",body:{action:"reply_manual",message_id:mid}});
+    if(r.ok && r.data.mailto) window.open(r.data.mailto);
+    return;
+  }
+  const r = await api("/actions",{method:"POST",body:{action:a,message_id:mid}});
+  toast(r.ok? (r.message||"完成") : (r.error||"失败"), r.ok?"ok":"err");
+  afterAction(mid);
+}
+async function afterAction(mid){
+  await loadBuckets();
+  const keep = S.items.findIndex(x=>x.message_id===mid);
+  // 只有工作桶视图会「因为动作而少一条」（归档/完成后就离开这个桶了）。
+  // 文件夹/标签视图是档案视角：标了已读、归档了，邮件**仍在这个文件夹里**，
+  // 把它从列表里抽掉反而会让人以为邮件没了。
+  if(S.scope.type==="bucket") S.items = scopeItems();
+  renderList();
+  const i = S.items.findIndex(x=>x.message_id===mid);
+  if(i>=0) select(i,false); else { S.cur=-1; S.curItem=null; }
+  if(S.items.length && i<0) select(Math.min(keep<0?0:keep, S.items.length-1), false);
+}
+async function batchApply(action){
+  if(S.batchBusy) return;                       // 防连点：一次只允许一批在跑
+  const ids=[...S.selected];
+  if(!ids.length){ toast("先按 x 选中邮件","warn"); return; }
+  const label = BATCH_TEXT[action] || action;
+  S.batchBusy = true;
+  // **立刻**给反馈，别等服务器。
+  // 这批可能上百封，服务端要逐类下发服务器标志；先不说话，
+  // 用户就会以为「点了没反应」而反复点（之前就是这个体验）。
+  toast(`正在${label}，共 ${ids.length} 封…`, "warn");
+  renderList();                                 // 让批量按钮进入 disabled 态
+  try{
+    const r = await api("/actions/batch",{method:"POST",body:{action:action,message_ids:ids}});
+    if(r.ok){
+      const d = r.data || {};
+      toast(`${label}：成功 ${d.succeeded} / 失败 ${d.failed}${d.imap ? "（"+d.imap+"）" : ""}`,
+            d.failed ? "warn" : "ok");
+      /* 「标为已读」之后如果数字没动，必须解释一句为什么 ——
+         否则用户只会得出「功能坏了」的结论（实测他连点了三次）。
+         最常见的原因是：这批邮件**本来就都是已读的**，
+         因为列表只显示最新 200 封，而未读常常排在更后面。 */
+      if(action==="read"){
+        const n = (S.items||[]).filter(x => ids.indexOf(x.message_id)>=0 && x.unread).length;
+        if(n === 0){
+          const uf = (S.folders||[]).find(x => x.path===S.scope.id);
+          toast("这 "+ids.length+" 封本来就都是已读的，数字不会变"
+                + (uf && uf.unread ? "。该文件夹还有 "+uf.unread+" 封未读，点「仅未读」直接看它们" : ""),
+                "warn");
+        }
+      }
+    }else{
+      toast(`${label}失败：${r.error || "未知错误"}`,"err");
+    }
+  }catch(err){
+    toast(`${label}请求异常：${err}`,"err");
+  }finally{
+    S.batchBusy = false;
+    S.selected.clear();
+    // 无论成功失败都要刷新：失败时也可能已经改了一部分（部分成功）
+    try{ await refreshAll(); }catch(e){ /* 刷新失败也不能把用户困在旧列表上 */ }
+  }
+}
+async function undoLast(){
+  // 与批处理共用「忙」标记 —— 两者都会大批改服务器状态，
+  // 撤销 145 封即使合并下发也要几秒，先给反馈，别让人以为点了没反应。
+  if(S.batchBusy) return;
+  S.batchBusy = true;
+  toast("正在撤销上一步操作…","warn");
+  renderList();
+  try{
+    const r = await api("/undo",{method:"POST",body:{}});
+    if(r.ok){
+      const d = r.data || {};
+      toast((d.message || "已撤销")
+            + (d.count ? `（${d.count} 封）` : "")
+            + (d.imap ? `　${d.imap}` : ""), "ok");
+    }else{
+      toast(r.error || "撤销失败", "warn");
+    }
+  }catch(err){
+    toast("撤销请求异常："+err,"err");
+  }finally{
+    S.batchBusy = false;
+    try{ await refreshAll(); }catch(e){ /* 刷新失败也不把用户困在原地 */ }
+  }
+}
+
+/* ===================================================================== */
+/* 搜索 / 简报 / 健康                                                    */
+/* ===================================================================== */
+async function doSearch(){
+  const q = $("q").value.trim();
+  if(!q){ S.view="list"; S.searchMode=false; await refreshAll(); return; }
+  const r = await api("/search?limit=200&q="+encodeURIComponent(q));
+  if(!r.ok){ toast("搜索失败："+r.error,"err"); return; }
+  S.view="list"; S.searchMode=true; S.lastQuery=q;
+  S.items = (r.data.messages||[]).map(m=>({
+    message_id:m.message_id, thread_id:m.thread_id, subject:m.subject,
+    from_name:m.from_name, from_addr:m.from_addr, date_iso:m.date_iso,
+    snippet:m.snippet, classification:m.classification, workflow_state:m.workflow_state,
+    message_count:1, unread:!!m.unread, has_attachments:!!m.has_attachments,
+  }));
+  S.cur=-1;
+  $("listhead").innerHTML = `<b>搜索</b> · ${S.items.length} 条 · <span style="color:var(--muted)">${esc(r.data.explain||"")}</span>
+    <span class="spacer"></span><button class="btn sm ghost" id="exitSearch">退出搜索</button>`;
+  const e=$("exitSearch"); if(e) e.onclick=()=>{ $("q").value=""; S.searchMode=false; refreshAll(); };
+  renderList();
+  if(S.items.length) select(0,false);
+}
+async function showBrief(){
+  S.view="brief";
+  const r = await api("/brief");
+  S.brief = r.ok? r.data.text : "加载失败："+r.error;
+  const el=$("detail");
+  el.innerHTML = `<div class="dhead"><h2>今日邮件简报</h2>
+      <div class="meta">本地生成 · 数字来自本机 SQLite · 不逐封骚扰</div></div>
+      <div class="briefbox">${esc(S.brief)}</div>
+      <div class="kpis" id="kpis"></div>
+      <div class="dscroll" style="color:var(--muted);font-size:12.5px">
+        Daily Brief 由本地 scheduler 每 30 分钟预计算一次快照，8:00 的投递任务直接读取，
+        不需要为了「生成简报」单独唤起模型。需要更自然的叙述时再交给 WorkBuddy 润色。
+      </div>`;
+  loadKpis();
+}
+async function loadKpis(){
+  const r = await api("/metrics");
+  const box=$("kpis"); if(!box || !r.ok) return;
+  const k = r.data.kpi||{};
+  box.innerHTML =
+    `<span>收件<b>${k.emails_received||0}</b></span>
+     <span>草稿任务<b>${k.total_draft_jobs||0}</b></span>
+     <span>已发送<b>${k.drafts_sent||0}</b></span>
+     <span>接受率<b>${k.draft_acceptance_rate==null?"—":(k.draft_acceptance_rate*100).toFixed(0)+"%"}</b></span>
+     <span>平均起草耗时<b>${k.average_draft_latency_seconds||0}s</b></span>
+     <span>平均编辑比例<b>${k.average_user_edit_ratio==null?"—":(k.average_user_edit_ratio*100).toFixed(0)+"%"}</b></span>
+     <span>Time to Inbox Zero<b>${k.time_to_inbox_zero_hours==null?"—":k.time_to_inbox_zero_hours+"h"}</b></span>`;
+}
+async function showHealth(){
+  S.view="health";
+  const d = await loadHealth();
+  const el=$("detail");
+  const comps = d.components||{};
+  let h = `<div class="dhead"><h2>健康检查</h2><div class="meta">
+      总体：<b>${esc((d.status||"").toUpperCase())}</b> · 检测耗时 ${d.elapsed_ms||0}ms
+      <div style="margin-top:4px;color:var(--muted)">UI 只显示 Healthy / Warning / Error；详细日志在 logs/ 目录。</div>
+    </div></div><div class="dscroll">`;
+  if((d.problems||[]).length){
+    h += `<div class="miss"><h4>需要注意</h4>` + d.problems.map(p=>`<div class="item"><span>•</span><span>${esc(p)}</span></div>`).join("") + `</div>`;
+  }
+  h += `<table style="width:100%;border-collapse:collapse;font-size:12.5px">`;
+  for(const [k,v] of Object.entries(comps)){
+    const c = v.status==="healthy"?"var(--ok)":(v.status==="warning"?"var(--warn)":"var(--err)");
+    h += `<tr><td style="padding:6px 0;border-bottom:1px solid #f0f2f5;width:120px"><b>${esc(k)}</b></td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f2f5;color:${c};font-weight:600">${esc(v.status)}</td>
+      <td style="padding:6px 0;border-bottom:1px solid #f0f2f5;color:var(--muted)">
+        ${esc(JSON.stringify(v.detail).slice(0,220))}</td></tr>`;
+  }
+  h += `</table></div>`;
+  el.innerHTML = h;
+}
+
+/* ===================================================================== */
+/* 刷新 / SSE                                                            */
+/* ===================================================================== */
+async function refreshAll(){
+  await loadBuckets();
+  await loadFolders();
+  if(S.view==="list" && !S.searchMode){ await loadScope(); }
+  else renderSide();
+}
+async function doSync(){
+  const b=$("syncBtn"); b.disabled=true; b.textContent="同步中…";
+  const r = await api("/sync",{method:"POST",body:{}});
+  b.disabled=false; b.textContent="同步";
+  if(r.ok){ toast(`同步完成：新增 ${r.data.new_messages||0} 封`, "ok"); await refreshAll(); }
+  else toast("同步失败："+r.error,"err");
+}
+function connectSSE(){
+  try{
+    const es = new EventSource(API_BASE + "/events");
+    es.addEventListener("mail", ()=>{ toast("收到新邮件","ok"); refreshAll(); loadHealth(); });
+    es.addEventListener("sync", ()=>refreshAll());
+    es.addEventListener("sync_done", ()=>{ refreshAll(); loadHealth(); });
+    es.addEventListener("job", ()=>{ refreshAll(); if(S.curItem) refreshDetail(); });
+    es.addEventListener("candidate", ()=>refreshAll());
+    es.addEventListener("snooze_wake_batch", ()=>{ toast("有邮件到了延后唤醒时间","warn"); refreshAll(); });
+    es.addEventListener("followup", (e)=>{ try{ toast("跟进提醒："+(JSON.parse(e.data).note||""),"warn"); }catch(_){} refreshAll(); });
+    es.addEventListener("recovery", ()=>refreshAll());
+    es.addEventListener("idle_state", ()=>loadHealth());
+    es.onerror = ()=>{};
+  }catch(e){}
+}
+
+/* ===================================================================== */
+/* 快捷键                                                                */
+/* ===================================================================== */
+function isTyping(){ const a=document.activeElement; return a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"); }
+document.addEventListener("keydown", (e)=>{
+  if(e.key==="/" && !isTyping()){ e.preventDefault(); $("q").focus(); return; }
+  // Escape：先关弹窗，再退输入框 —— 开着弹窗时按 Esc 应该关弹窗
+  if(e.key==="Escape"){
+    if($("composeModal")){ closeCompose(); return; }
+    if(isTyping()){ document.activeElement.blur(); return; }
+  }
+  if(isTyping()) return;
+  const nav = (d)=>{ if(!S.items.length) return; let i=S.cur+d; i=Math.max(0,Math.min(S.items.length-1,i)); select(i,false);
+    const r=document.querySelector(`.row[data-i="${i}"]`); if(r) r.scrollIntoView({block:"nearest"}); };
+  switch(e.key){
+    case "j": case "ArrowDown": e.preventDefault(); nav(1); break;
+    case "k": case "ArrowUp": e.preventDefault(); nav(-1); break;
+    case "Enter": if(S.curItem) openDetail(S.curItem,true); break;
+    case "r": if(S.curItem) doAction("reply_ai", S.detail||S.curItem); break;
+    case "a": if(S.curItem) doAction("archive", S.detail||S.curItem); break;
+    case "s": if(S.curItem) doAction("snooze", S.detail||S.curItem); break;
+    case "d": if(S.curItem) doAction("done", S.detail||S.curItem); break;
+    case "w": if(S.curItem) doAction("waiting", S.detail||S.curItem); break;
+    case "e": if(S.curItem) doAction("open_external", S.detail||S.curItem); break;
+    case "x": if(S.cur>=0) toggleSel(S.cur); break;
+    case "u": undoLast(); break;
+    case "g": refreshAll(); break;
+    case "b": showBrief(); break;
+    case "c": if(!$("composeModal")) openCompose(); break;
+    default: break;
+  }
+});
+
+/* ===================================================================== */
+/* init                                                                  */
+/* ===================================================================== */
+$("q").addEventListener("keydown", (e)=>{ if(e.key==="Enter") doSearch(); });
+$("syncBtn").onclick = doSync;
+$("briefBtn").onclick = showBrief;
+$("healthBtn").onclick = showHealth;
+/* 「回到顶部」：滚动容器是 #list，它在整个生命周期里是同一个元素
+   （只换 innerHTML），所以这里绑一次就够，不必像 V1 那样用捕获阶段代理。 */
+$("toTop").onclick = ()=>{
+  const sc = $("list");
+  if(sc) sc.scrollTo({ top: 0, behavior: "smooth" });
+};
+$("list").addEventListener("scroll", syncToTop, { passive: true });
+(async function init(){
+  // 嵌入 V1 工作台时，加载它的设计 token，保证外观与 WorkBuddy 一致
+  if(API_BASE){
+    const l = document.createElement("link");
+    l.rel = "stylesheet"; l.href = "/css/tokens.css";
+    document.head.appendChild(l);
+  }
+  await loadConstants();
+  const h = await loadHealth();
+  $("acct").textContent = (h.config && h.config.user) || "—";
+  await loadBuckets();
+  await loadFolders();
+  await loadScope();
+  connectSSE();
+  setInterval(loadHealth, 60000);
+  // 定时刷新：工作桶 + 文件夹计数（文件夹未读数会随别处操作变化）
+  setInterval(()=>{ if(!S.searchMode){ loadBuckets(); loadFolders(); } }, 45000);
+
+  /* -------------------------------------------------------------------------
+   * 自动化测试钩子（必须定义在 IIFE 内部，否则拿不到这些函数）。
+   *
+   * 界面里的函数都在这个 IIFE 里，外面的 Playwright 脚本调不到 —— 于是 UI 测试
+   * 只能靠「按文本找行、点一下」这种脆弱办法，改个文案就断。
+   * 这里明确暴露一组只读入口给自检脚本用（只暴露，不改行为）。
+   * ----------------------------------------------------------------------- */
+  window.__mw = {
+    openDetail: (item) => openDetail(item, false),
+    attAction: (kind, aid) => attAction(kind, aid, null),
+    setScope: (type, id) => setScope(type, id),
+    openCompose: (p) => openCompose(p || {}),
+    closeCompose: () => closeCompose(),
+    toggleSelectAll: () => toggleSelectAll(),
+    clickTop: () => { const b=$("toTop"); if(b) b.click(); },
+    scrollList: (y) => { const l=$("list"); if(l) l.scrollTop = y; syncToTop(); },
+    state: () => ({
+      scope: S.scope, view: S.view, items: S.items.length,
+      // 未读相关：自检脚本要能断言「仅未读」筛选确实只留下了未读邮件
+      onlyUnread: !!S.onlyUnread,
+      unreadInItems: S.items.filter(x=>x.unread).length,
+      folders: (S.folders||[]).map(f=>({path:f.path, total:f.total,
+        unread:f.unread, custom:!!f.custom})),
+      indexCount: S.indexCount,
+      selected: S.selected.size,
+      allSelected: S.items.length>0 &&
+        S.items.every(x=>S.selected.has(x.message_id)),
+      toTopShown: !!($("toTop")||{}).classList &&
+        $("toTop").classList.contains("is-show"),
+      labels: Array.from(document.querySelectorAll(".row .sub")).slice(0,3).map(e=>e.textContent),
+    }),
+  };
+})();
+</script>
+</body>
+</html>

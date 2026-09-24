@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>邮件管理 · WorkBuddy</title>
+<!-- 内联 favicon：消掉控制台里唯一的 404 噪音。
+     排查「点了没反应」时靠的是「控制台无错误」，噪音少了才不会漏看真错误。 -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%233a66ac'/><text x='16' y='23' font-size='19' font-family='sans-serif' fill='%23ffffff' text-anchor='middle'>W</text></svg>">
+<!-- 版本号：改动前端代码后递增，避免浏览器拿缓存的旧 JS/CSS（表现为「点了没反应」） -->
+<link rel="stylesheet" href="./css/tokens.css?v=20">
+<link rel="stylesheet" href="./css/app.css?v=20">
+<script>
+/* 调试用：任何 JS 错误直接显示在页面顶部。
+   否则前端出错的表现就是「点了没反应」，无从排查。 */
+(function () {
+  function fatal(msg, where) {
+    var box = document.getElementById('fatal');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'fatal';
+      box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;' +
+        'background:#ff5a52;color:#fff;padding:10px 14px;font:12px/1.6 monospace;' +
+        'white-space:pre-wrap;word-break:break-all';
+      document.body.appendChild(box);
+    }
+    box.textContent = '前端错误：' + msg + (where ? '\n' + where : '');
+  }
+  window.__fatal = fatal;
+  window.addEventListener('error', function (e) {
+    fatal(e.message || String(e.error), (e.filename || '') + ':' + (e.lineno || ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    fatal((r && (r.message || r)) || 'promise rejection');
+  });
+
+  /* ---------------------------------------------------------------
+     遮罩自愈守卫
+
+     #modalRoot 是 position:fixed;inset:0;z-index:50 的全屏层。
+     它平时为空、靠 hidden 属性隐藏；但作者样式里的 display:grid
+     会覆盖 hidden 自带的 display:none —— 于是这个隐形空层一直盖在
+     页面上，拦截全部点击：页面照常显示、却「怎么点都没反应」。
+     （典型触发：浏览器缓存了旧版 app.css，修复没生效。）
+
+     这里在内联脚本里兜底：只要遮罩是空的，就强制内联 display:none。
+     内联样式优先级最高，压得过任何旧 CSS；且内联脚本不依赖模块加载，
+     即使 main.js 没跑起来也照样生效。
+     --------------------------------------------------------------- */
+  var overlayWarned = false;
+  function guardOverlay() {
+    var mr = document.getElementById('modalRoot');
+    if (!mr) return;
+    var empty = mr.children.length === 0 && !String(mr.textContent || '').trim();
+    if (empty) {
+      // 强制前先判定：空着却仍会被显示出来 —— 说明拿到的是旧 CSS
+      if (!overlayWarned && getComputedStyle(mr).display !== 'none') {
+        overlayWarned = true;
+        fatal('检测到旧缓存样式：写邮件遮罩层（#modalRoot）在应有隐藏状态下仍被显示，' +
+              '已自动强制隐藏。这层遮罩会拦截整页点击，表现为「点了没反应」。' +
+              '请在预览面板按 Ctrl+Shift+R 强制刷新一次，彻底去掉旧样式。');
+      }
+      mr.style.display = 'none';
+      mr.setAttribute('hidden', '');
+    } else {
+      mr.style.display = '';
+      mr.removeAttribute('hidden');
+    }
+  }
+  window.__guardOverlay = guardOverlay;
+  document.addEventListener('DOMContentLoaded', function () {
+    guardOverlay();
+    var mr = document.getElementById('modalRoot');
+    if (mr && window.MutationObserver) {
+      new MutationObserver(guardOverlay).observe(mr, { childList: true, subtree: true });
+    }
+    // 样式表可能晚于 DOMContentLoaded 生效，再补两次
+    setTimeout(guardOverlay, 300);
+    setTimeout(guardOverlay, 1500);
+  });
+
+  /* ---------------------------------------------------------------
+     版本自检
+
+     面板里常常一直开着一个旧页面：后端代码更新了、页面却还是老的，
+     表现就是「新做的功能我看不到」。这里定期问服务器当前版本，
+     一旦变了就自动刷新，不用用户自己去按刷新。
+     --------------------------------------------------------------- */
+  var myVersion = null;
+  function checkVersion() {
+    fetch('/api/version', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (myVersion === null) { myVersion = d.v; return; }
+        if (d.v && d.v !== myVersion) location.reload();
+      })
+      .catch(function () {});
+  }
+  window.addEventListener('load', function () {
+    checkVersion();
+    setInterval(checkVersion, 10000);
+  });
+})();
+</script>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ① WorkBuddy 主导航条：邮件管理入口在这里，带未读状态 -->
+  <nav class="rail" id="rail"></nav>
+
+  <!-- ② 工作台：文件夹树 + 邮件列表 + 阅读窗格 -->
+  <main class="workbench">
+
+    <section class="col-folders" id="colFolders"></section>
+
+    <section class="col-list" id="colList"></section>
+
+    <section class="col-reader" id="colReader"></section>
+
+  </main>
+</div>
+
+<!-- 写邮件弹窗 -->
+<div class="modal-root" id="modalRoot" hidden></div>
+
+<!-- 轻提示 -->
+<div class="toast-root" id="toastRoot"></div>
+
+<script type="module" src="./js/main.js?v=20"></script>
+</body>
+</html>

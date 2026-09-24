@@ -62,7 +62,7 @@ def create_desktop_icon():
     if not os.path.isdir(desk):
         return None
     target = os.path.join(desk, "邮件工作台.cmd")
-    launcher = os.path.join(HERE, "启动邮件工作台.cmd")
+    launcher = os.path.join(HERE, "启动V2工作台.cmd")
     try:
         with open(target, "w", encoding="utf-8") as f:
             f.write("@echo off\r\n")
@@ -178,7 +178,7 @@ def main():
     say("=" * 62)
     say()
     say("它把「交大邮箱（IMAP）」和「Foxmail 本地索引」合成一个网页工作台。")
-    say("只需要装一次，之后双击「启动邮件工作台.cmd」就能用。")
+    say("只需要装一次，之后双击「启动V2工作台.cmd」就能用。")
     say()
 
     old = load_existing()
@@ -418,8 +418,8 @@ def main():
     say("  装好了。")
     say("=" * 62)
     say()
-    say("  启动方式：双击  %s" % os.path.join(HERE, "启动邮件工作台.cmd"))
-    say("  然后浏览器打开  http://127.0.0.1:8080")
+    say("  启动方式：双击  %s" % os.path.join(HERE, "启动V2工作台.cmd"))
+    say("  然后浏览器打开  http://127.0.0.1:8080/workbench")
     say()
     say("  如果页面提示「连不上本地服务」，就是服务没跑起来，")
     say("  双击上面那个 .cmd 即可（它会顺便把守护进程也拉起来）。")

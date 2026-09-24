@@ -1,0 +1,476 @@
+/* ============================================================
+   邮件工作台样式
+   布局：导航条 | 文件夹树 | 邮件列表 | 阅读窗格
+   ============================================================ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-content);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; font-size: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input  { font-family: inherit; font-size: inherit; }
+
+.app { display: flex; height: 100vh; }
+
+/* ---------------------------------------------------------- ① 主导航条 */
+.rail {
+  width: var(--rail-w);
+  flex: 0 0 var(--rail-w);
+  background: var(--bg-rail);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 2px;
+  border-right: 1px solid var(--border-default);
+}
+.rail-brand {
+  width: 34px; height: 34px; border-radius: var(--r-md);
+  background: var(--brand); color: var(--text-on-brand);
+  display: grid; place-items: center; font-weight: 500; font-size: 15px;
+  margin-bottom: 10px;
+}
+.rail-sep {
+  width: 100%; padding: 2px 8px 5px;
+  font-size: 10px; color: var(--brand-deep); opacity: .62;
+  text-align: center; letter-spacing: .5px;
+}
+.rail-line { width: 26px; height: 1px; background: #ffffff8c; margin: 6px 0 2px; }
+
+/* 空间卡片：邮件入口，顶部常驻，带名称 + 未读 */
+.rail-space {
+  position: relative;
+  width: 56px; padding: 9px 0 7px;
+  border-radius: var(--r-lg);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: #ffffffe6;
+  box-shadow: var(--shadow-card);
+  color: var(--brand-deep);
+}
+.rail-space.is-active { background: #fff; box-shadow: 0 6px 14px -6px #001f4f33; }
+.rail-space:hover { background: #fff; }
+.rail-space .rs-ico { display: grid; place-items: center; color: var(--brand); }
+.rail-space .rs-name { font-size: 11px; font-weight: 500; letter-spacing: -.2px; }
+.rs-badge {
+  position: absolute; top: -4px; right: 2px;
+  min-width: 17px; height: 17px; padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--danger); color: #fff;
+  font-size: 10px; line-height: 17px; text-align: center; font-weight: 500;
+  box-shadow: 0 0 0 2px var(--bg-rail);
+}
+.rs-badge.is-zero { display: none; }
+
+.rail-item {
+  position: relative;
+  width: 52px; padding: 8px 0;
+  border-radius: var(--r-md);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  color: var(--brand-deep);
+  transition: background .15s;
+}
+.rail-item:hover { background: #ffffff66; }
+.rail-item .ico { display: grid; place-items: center; }
+.rail-item .lbl { font-size: 11px; letter-spacing: -.2px; }
+
+.rail-foot {
+  width: 52px; padding: 5px 0;
+  display: flex; flex-direction: column; align-items: center;
+  color: var(--brand-deep); opacity: .72;
+}
+.rail-foot .rf-num { font-size: 12px; font-weight: 500; }
+.rail-foot .rf-lbl { font-size: 10px; opacity: .8; }
+
+/* ---------------------------------------------------------- 工作台骨架 */
+.workbench { flex: 1; display: flex; min-width: 0; }
+
+.col-folders {
+  width: var(--folders-w); flex: 0 0 var(--folders-w);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.col-list {
+  width: var(--list-w); flex: 0 0 var(--list-w);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  position: relative;          /* 「回到顶部」按钮以此为定位基准 */
+}
+.col-reader {
+  flex: 1 1 auto; min-width: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------- ② 文件夹树 */
+.folders-head { padding: 14px 14px 8px; }
+.compose-btn {
+  width: 100%; height: 34px; border-radius: var(--r-md);
+  background: var(--brand); color: var(--text-on-brand);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-weight: 500;
+}
+.compose-btn:hover { background: var(--brand-hover); }
+.compose-btn:active { background: var(--brand-active); }
+
+.tree { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+.tree-group-title {
+  font-size: 11px; color: var(--text-muted);
+  padding: 12px 8px 4px; letter-spacing: .3px;
+}
+.tree-item {
+  display: flex; align-items: center; gap: 8px;
+  height: 32px; padding: 0 8px; border-radius: var(--r-md);
+  color: var(--text-primary); width: 100%; text-align: left;
+}
+.tree-item:hover { background: var(--bg-hover-light); }
+.tree-item.is-active { background: var(--bg-selected-soft); font-weight: 500; color: var(--brand-deep); }
+.tree-item .ti-ico { width: 16px; text-align: center; font-size: 13px; flex: 0 0 16px; }
+.tree-item .ti-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-count {
+  font-size: 11px; color: var(--text-tertiary);
+  background: #ffffffb3; border-radius: var(--r-pill); padding: 1px 6px;
+}
+.tree-count.is-unread { background: var(--brand); color: var(--text-on-brand); font-weight: 500; }
+
+.tag-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+
+/* ---------------------------------------------------------- ③ 列表区 */
+.list-toolbar {
+  padding: 10px 12px; border-bottom: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.search-box {
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px;
+  background: var(--bg-secondary);
+  border: 1px solid transparent; border-radius: var(--r-md);
+}
+.search-box:focus-within { border-color: var(--border-control); background: #fff; }
+.search-box input { flex: 1; border: none; outline: none; background: none; color: var(--text-primary); }
+.search-box input::placeholder { color: var(--text-muted); }
+.search-src {
+  font-size: 10px; color: var(--text-tertiary); background: #ffffffcc;
+  border-radius: var(--r-pill); padding: 1px 6px; white-space: nowrap;
+}
+
+.filter-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.chip {
+  height: 24px; padding: 0 10px; border-radius: var(--r-pill);
+  background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px;
+}
+.chip:hover { background: var(--bg-hover); }
+.chip.is-active { background: var(--brand); color: var(--text-on-brand); }
+/* 处理超时的告警 chip：橙色，跟蓝色主色和红色失败区分开 */
+.chip.is-warn { background: #fff7e6; color: #a35b00; }
+
+/* 批量操作条（勾选邮件后出现在列表顶部）
+   列表栏只有 380px，六个按钮排不下 —— 必须让它们**整颗换行**：
+   不写 flex-wrap 的话，浏览器不会把按钮挪到下一行，而是把按钮自己压窄，
+   于是「标已读」变成竖着写的「标/已/读」（2026-09-21 用户截图反馈的格式问题）。
+   配合 white-space:nowrap + flex:0 0 auto，按钮保持自身宽度、可读性优先。 */
+.bulkbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 12px; background: var(--bg-selected-soft);
+  border-bottom: 1px solid var(--border-subtle); font-size: 12px;
+  row-gap: 6px;
+}
+.bulkbar .bulk-count { white-space: nowrap; flex: 0 0 auto; }
+.bulkbar .btn-mini { white-space: nowrap; flex: 0 0 auto; }
+.btn-mini {
+  height: 24px; padding: 0 10px; border-radius: var(--r-sm);
+  background: #fff; border: 1px solid var(--border-default); color: var(--text-primary);
+}
+.btn-mini:hover { background: var(--bg-hover-light); }
+.btn-mini.danger { color: var(--danger-text); border-color: #ffcac7; }
+
+.list-scroll { flex: 1; overflow-y: auto; }
+
+/* 列表末尾的翻页状态条：告诉用户「后面还有」还是「到底了」 */
+.list-more {
+  padding: 14px 12px 22px; text-align: center;
+  font-size: 12px; color: var(--text-tertiary);
+}
+/* 一键回到顶部：滚过一屏才浮出来（is-show 由 main.js 的 syncToTop() 加）。
+   常驻但透明 + 不可点，避免频繁增删 DOM，也免得列表重绘时闪一下。 */
+.to-top {
+  position: absolute; right: 16px; bottom: 18px; z-index: 5;
+  height: 30px; padding: 0 12px; border-radius: var(--r-pill);
+  background: var(--bg-panel); color: var(--text-secondary);
+  border: 1px solid var(--border-default); font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+  opacity: 0; transform: translateY(6px); pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.to-top.is-show { opacity: 1; transform: none; pointer-events: auto; }
+.to-top:hover { color: var(--text-primary); background: var(--bg-hover-light); }
+
+.list-more.is-end { padding-bottom: 26px; }
+
+.mail-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 12px; border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer; position: relative;
+}
+.mail-item:hover { background: var(--bg-hover-light); }
+.mail-item.is-active { background: var(--bg-selected-soft); }
+.mail-item.is-active::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--brand);
+}
+.mail-item.is-unread .mi-from,
+.mail-item.is-unread .mi-subject { font-weight: 500; }
+
+.mi-check { flex: 0 0 auto; padding-top: 2px; }
+.mi-check input { width: 14px; height: 14px; accent-color: var(--brand); cursor: pointer; }
+
+.mi-dot {
+  flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%;
+  margin-top: 5px; background: transparent;
+}
+.is-unread .mi-dot { background: var(--unread); }
+
+.mi-body { flex: 1; min-width: 0; }
+.mi-line { display: flex; align-items: baseline; gap: 8px; }
+.mi-from {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mi-time { flex: 0 0 auto; font-size: 11px; color: var(--text-tertiary); }
+.mi-subject {
+  font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mi-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.mi-attach { font-size: 11px; color: var(--text-tertiary); }
+.mi-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: var(--r-pill);
+  background: var(--brand-soft); color: var(--brand-deep);
+}
+.mi-tag.idx { background: var(--bg-tertiary); color: var(--text-tertiary); }
+/* 手动标的重要：红色，比自动分级的标签更醒目（那是机器猜的，这是人定的） */
+.mi-tag.flag { background: #ffe3e0; color: var(--danger-text); font-weight: 600; }
+
+/* ---------------------------------------------------------- ④ 阅读窗格 */
+.reader-empty {
+  flex: 1; display: grid; place-items: center; color: var(--text-muted);
+}
+.reader-head {
+  padding: 16px 22px 12px; border-bottom: 1px solid var(--border-subtle);
+}
+.reader-subject { font-size: 16px; font-weight: 500; color: var(--text-primary); line-height: 1.45; }
+.reader-meta { margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.reader-avatar {
+  width: 30px; height: 30px; border-radius: 50%; background: var(--brand);
+  color: var(--text-on-brand); display: grid; place-items: center; font-size: 13px; flex: 0 0 30px;
+}
+.reader-who { flex: 1; min-width: 0; }
+.reader-who .w-name { font-size: 13px; color: var(--text-primary); }
+.reader-who .w-addr { font-size: 11.5px; color: var(--text-tertiary); }
+.reader-date { font-size: 11.5px; color: var(--text-tertiary); }
+.reader-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+.btn {
+  height: 30px; padding: 0 14px; border-radius: var(--r-md);
+  background: var(--brand); color: var(--text-on-brand); font-weight: 500;
+}
+.btn:hover { background: var(--brand-hover); }
+.btn.ghost { background: var(--bg-secondary); color: var(--text-primary); font-weight: 400; }
+.btn.ghost:hover { background: var(--bg-hover); }
+
+/* 「标重要」按红色字显示（用户明确要求）。
+   选择器写两个类是为了压过上面的 .btn.ghost —— 那一条也会设 color。 */
+.btn.ghost.btn-important { color: var(--danger-text); font-weight: 500; }
+.btn.ghost.btn-important:hover { background: #ffecea; }
+.btn.ghost.btn-important.is-on { background: #ffe3e0; border-color: #ffcac7; }
+
+/* 「已加入队列 · 撤回」：这封已经在队列里了，按钮不再是提交动作，
+   做成灰底弱化 + 实心边框，跟蓝色主按钮明显区分，避免再点一次。 */
+.btn.is-queued {
+  background: var(--bg-secondary); color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+}
+.btn.is-queued:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* 「生成失败 · 重试」：红色描边，跟「排队中」的灰区分开 ——
+   失败是唯一需要用户再动一次手的状态，不该被当成普通的灰按钮略过。 */
+.btn.is-failed {
+  background: #fff; color: var(--danger-text);
+  border: 1px solid #ffcac7;
+}
+.btn.is-failed:hover { background: #fff5f4; }
+.btn:disabled { cursor: default; opacity: .75; }
+
+/* 「已加急 · 已等 12 分钟 ⚠」：等超过阈值就转橙。
+   灰按钮的意思是「正常排队」，橙色的意思是「比平常慢，可能卡住了」——
+   不换个颜色，用户看不出这两种状态有什么区别。 */
+.btn.is-queued.is-stalled {
+  background: #fff7e6; color: #a35b00; border-color: #ffd591;
+}
+.btn.is-queued.is-stalled:hover { background: #ffefd1; color: #873d00; }
+
+.reader-body {
+  flex: 1; overflow-y: auto; padding: 18px 22px 40px;
+  font-size: 13.5px; line-height: 1.85; color: var(--text-primary);
+  white-space: pre-wrap; word-break: break-word;
+}
+.attach-list {
+  padding: 10px 22px; border-top: 1px solid var(--border-subtle);
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+}
+.attach-label { font-size: 11px; color: var(--text-tertiary); }
+/* 附件是可点的：点击 = 取到本地 + 用默认程序打开
+   （可执行类只保存不打开，服务端会说明原因） */
+.attach-chip {
+  font: inherit; font-size: 12px; padding: 4px 10px; border-radius: var(--r-sm);
+  background: var(--bg-secondary); color: var(--text-secondary);
+  border: 1px solid transparent; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.attach-chip:hover {
+  background: var(--bg-hover-light); border-color: var(--border-subtle);
+  color: var(--brand-deep);
+}
+.attach-chip:disabled { opacity: .5; cursor: default; }
+.ac-size { font-size: 10.5px; color: var(--text-tertiary); }
+
+/* 草稿就绪提示条：显眼但不刺眼，必须让人一眼看到 */
+.draft-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 16px 8px; padding: 8px 12px; border-radius: var(--r-md);
+  background: var(--brand-soft); color: var(--brand-deep);
+  border: 1px solid var(--border-subtle); font-size: 12.5px;
+}
+.draft-bar .spacer { flex: 1; }
+.draft-bar b { font-weight: 600; }
+
+/* 「已移到已删除邮件」之后的撤销条。
+   用警示色而不是品牌蓝：这是一条「刚才那个操作还能反悔」的提示，
+   跟「草稿好了」那种中性通知不该长得一样。 */
+.undo-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 16px 8px; padding: 8px 12px; border-radius: var(--r-md);
+  background: #fff4f2; color: var(--danger-text);
+  border: 1px solid #ffd9d5; font-size: 12.5px;
+}
+.undo-bar .spacer { flex: 1; }
+.undo-bar b { font-weight: 600; }
+.undo-bar svg { flex: 0 0 auto; }
+
+/* ---------------------------------------------------------- 状态 / 空 / 加载 */
+.state {
+  padding: 28px 16px; text-align: center; color: var(--text-muted); font-size: 12.5px;
+}
+.state.err { color: var(--danger-text); }
+.skeleton { padding: 12px; }
+.sk-row {
+  height: 44px; border-radius: var(--r-md); margin-bottom: 8px;
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-hover-light) 37%, var(--bg-secondary) 63%);
+  background-size: 400% 100%; animation: shimmer 1.3s ease infinite;
+}
+@keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+/* ---------------------------------------------------------- 写邮件 */
+.modal-root {
+  position: fixed; inset: 0; background: #001f4f66;
+  display: none; place-items: center; z-index: 50;
+}
+.modal-root.is-open { display: grid; }
+
+/* 下面两条都是「防遮罩拦点击」的保险，别删。
+
+   背景：作者样式里的 display 会覆盖 hidden 属性自带的 display:none，
+   于是这个 position:fixed;inset:0 的空层会一直盖着页面、吃掉所有点击 ——
+   页面照常渲染，但「怎么点都没反应」。已实测复现：
+   <div id="modalRoot" class="modal-root"></div> intercepts pointer events
+
+   1) [hidden]：显式补上 hidden 对应的 display:none。
+   2) :empty：特异性 (0,2,0) 高于 .modal-root (0,1,0)，所以哪怕浏览器
+      加载到的是旧版 CSS（只有 .modal-root{display:grid}），这条照样生效。
+      只要遮罩里没内容，就绝不可能被显示出来。 */
+.modal-root[hidden] { display: none; }
+.modal-root:empty { display: none; }
+.modal {
+  width: min(680px, 92vw); background: var(--bg-panel);
+  border-radius: var(--r-xl); box-shadow: var(--shadow-pop); overflow: hidden;
+}
+.modal-head {
+  padding: 14px 18px; border-bottom: 1px solid var(--border-subtle);
+  display: flex; align-items: center; font-weight: 500;
+}
+.modal-head .spacer { flex: 1; }
+.modal-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.field {
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;
+}
+.field label { width: 44px; flex: 0 0 44px; color: var(--text-tertiary); font-size: 12px; }
+.field input {
+  flex: 1; border: none; outline: none; background: none; color: var(--text-primary);
+}
+.modal-body textarea {
+  width: 100%; height: 240px; resize: none; outline: none;
+  border: 1px solid var(--border-subtle); border-radius: var(--r-md);
+  padding: 10px; color: var(--text-primary); line-height: 1.7; background: var(--bg-tertiary);
+}
+.modal-foot {
+  padding: 12px 18px; border-top: 1px solid var(--border-subtle);
+  display: flex; align-items: center; gap: 10px;
+}
+.modal-foot .spacer { flex: 1; }
+.modal-foot .hint { font-size: 11.5px; color: var(--text-tertiary); }
+
+/* ---------------------------------------------------------- toast */
+.toast-root {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center;
+}
+.toast {
+  background: #001f4fe6; color: var(--text-on-brand);
+  padding: 9px 16px; border-radius: var(--r-md); font-size: 12.5px;
+  box-shadow: var(--shadow-pop); animation: pop .18s ease;
+}
+.toast.ok { background: var(--brand); }
+.toast.err { background: var(--danger-text); }
+.toast.warn { background: #8a5a00; }
+@keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---------------------------------------------------------- 窄屏：两级导航
+
+   原来这里只有一行 `.col-reader { display: none; }` —— 把阅读窗格直接藏掉。
+   后果：面板宽度约 820px（< 960px）时，点开邮件右边一片空白，
+   看不到正文，自然也看不到「回复 / 让 WorkBuddy 起草 / 发送」这些按钮。
+   隐藏一个面板不叫响应式，叫把问题藏起来。
+
+   现在改成两级导航：
+     · 窄屏默认：列表占满宽度（文件夹收起）
+     · 点开某封 → 整屏切到阅读态，左上角出现「返回列表」
+   另外宽屏下把比例掰正：列表固定宽度，剩余空间全给阅读区
+   （原本列表会长到 900+px，阅读区反而只剩 300px）。 */
+
+.reader-back { display: none; }
+
+@media (max-width: 1180px) {
+  :root { --folders-w: 190px; }
+}
+
+@media (max-width: 960px) {
+  .col-folders { display: none; }
+  .col-list { flex: 1 1 auto; width: auto; }
+  .col-reader { display: none; }
+
+  .app.is-reading .col-list { display: none; }
+  .app.is-reading .col-reader { display: flex; flex: 1 1 auto; }
+  .app.is-reading .reader-back { display: inline-flex; align-items: center; gap: 4px; }
+}

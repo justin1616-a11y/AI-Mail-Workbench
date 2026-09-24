@@ -29,7 +29,7 @@ if not exist "%DESK%" (
 
 > "%DESK%\邮件工作台.cmd" echo @echo off
 >> "%DESK%\邮件工作台.cmd" echo rem 邮件工作台 —— 双击即可（起服务 + 打开浏览器）
->> "%DESK%\邮件工作台.cmd" echo start "" /min "%MW%启动邮件工作台.cmd"
+>> "%DESK%\邮件工作台.cmd" echo start "" /min "%MW%启动V2工作台.cmd"
 
 echo.
 echo   桌面图标已建好：

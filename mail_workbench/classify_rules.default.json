@@ -1,0 +1,124 @@
+{
+  "_comment": "包内**中性默认**分级规则（新装机用）。它不含任何个人地址。你自己的规则请放在 ~/.workbuddy/skills/sjtu-mail-remote/classify_rules.json 或项目根目录的 classify_rules.json —— 那两个位置的优先级更高，会覆盖本文件。见 README §十三。",
+
+  "vip": {
+    "_comment": "最高优先级。留空即「不整体置顶任何发件人」——大多数人的收件箱里，置顶规则太宽会等于没分级。",
+    "senders": [],
+    "domains": [],
+    "note": "把自己最怕漏的那几个地址/域名填进来，比如科研管理部门、合作方公司。"
+  },
+
+  "bulk_notice": {
+    "_comment": "群发通知降级（**默认不启用**：senders/domains 为空，等于关闭）。作用是把「大范围群发通知」从 ★重点 降为 ○看一眼，并在工作台里归入「群发通知」区，不占用「待我处理」。启用方式：把常发通知的地址填进 senders/domains。两个开关都要对：发件人在名单里 **且** 主题命中 subject_keywords 才降级；命中 except_keywords（保命词）一律不降级。真人对人的往来不要写进 senders，否则会被误伤。",
+    "senders": [],
+    "domains": [],
+    "subject_keywords": [
+      "申报指南", "征求意见", "发布征集", "征集", "通告",
+      "立项建议", "指南意见", "指南建议", "转发", "Fwd:", "申报通知"
+    ],
+    "except_keywords": [
+      "人员信息核查", "限项", "答辩", "结题", "验收", "中期检查",
+      "邀您", "请您", "请于", "点名", "定向"
+    ],
+    "note": "改完规则要在工作台跑一次「重算分类」（POST /api/v2/maintenance/reclassify），否则库里存的还是旧判定。"
+  },
+
+  "act": {
+    "_comment": "要动手，但不是回邮件 —— 得去对应系统里处理",
+    "senders": [],
+    "domains": [
+      "pro.nsfc.gov.cn",
+      "xcdsystem.com",
+      "easychair.org",
+      "editorialmanager.com",
+      "elsevier.com",
+      "micromeritics.com"
+    ],
+    "note": "基金申报系统 / 投稿系统 / 编辑系统：去系统里点，不用回邮件"
+  },
+
+  "dump": {
+    "_comment": "直接扔：掠夺性出版商、营销群发、钓鱼域名",
+    "domains": [
+      "researchgatemail.net",
+      "asianonlinejournals.com",
+      "onlinesciencepublishing.com",
+      "onlineacademicpress.com",
+      "infinitemindsconferences.info",
+      "conscientiabeam.org"
+    ],
+    "tlds": [
+      "shop", "top", "xyz", "click", "link", "info", "biz", "work",
+      "live", "cam", "cfd", "gq", "ml", "tk", "ga", "cf", "icu", "rest", "monster"
+    ],
+    "random_domain": true,
+    "random_note": "域名主体是 6-14 位无意义纯小写字母时判为随机域名（钓鱼常用）"
+  },
+
+  "read": {
+    "_comment": "看一眼留档，通常不用回",
+    "senders": [],
+    "domains": [
+      "mdpi.com",
+      "newsletter.springer.com",
+      "go.mathworks.com",
+      "sae.org",
+      "trip.com"
+    ],
+    "note": "期刊约稿 / 会议通知 / 软件营销。会议类留在这里而不是扔，是为了不漏掉审稿邀请"
+  },
+
+  "bulk_pattern": "noreply|no-reply|donotreply|notification|newsletter|digest|unsubscribe|mailer|auto-",
+  "bulk_note": "发件地址命中此正则时，即使不在任何清单里，也从 reply 降级为 read",
+
+  "trusted_domains": {
+    "_comment": "白名单：这些域名不做机器特征检测，避免误伤（如 springer.com 会被随机域名规则误判）",
+    "domains": [
+      "qq.com", "gmail.com", "163.com", "126.com", "outlook.com", "hotmail.com",
+      "edu.cn", "gov.cn", "ac.cn", "org.cn",
+      "catl.com", "nsfc.gov.cn", "elsevier.com", "springer.com", "mdpi.com",
+      "ieee.org", "sae.org", "jove.com", "mathworks.com", "trip.com", "letpub.cn",
+      "vip.163.com", "foxmail.com", "sina.com"
+    ]
+  },
+
+  "heuristics": {
+    "_comment": "机器生成邮件的特征。命中任意一条即判为 dump（白名单域名豁免）",
+    "name_equals_localpart": true,
+    "name_equals_localpart_note": "发件人名 == 邮箱@前的部分，说明对方没设显示名，是批量群发",
+    "localpart_maxlen": 15,
+    "localpart_maxlen_note": "@前部分超过 15 字符",
+    "digits_in_localpart": 6,
+    "digits_in_localpart_note": "@前含连续 6 位以上数字",
+    "repeated_domain_token": true,
+    "repeated_domain_token_note": "域名含重复词（如 polytechnic-univ-univ）",
+    "random_label_minlen": 6,
+    "random_label_maxlen": 14,
+    "random_label_note": "域名任一段是 6-14 位无意义纯字母",
+    "digits_in_domain_label": true,
+    "digits_in_domain_label_note": "域名段含数字且长度>=4"
+  },
+
+  "human_name": {
+    "_comment": "判定真人的兜底信号：显示名含中文字符",
+    "cjk_name_means_human": true,
+    "name_prefix_brackets_not_human": true,
+    "name_prefix_brackets_note": "显示名以【】开头的是系统/营销标记，不算真人"
+  },
+
+  "spam_keywords": {
+    "_comment": "主题命中任一关键词则从 reply 降级为 read。不直接扔，避免误杀真人正经邮件",
+    "keywords": [
+      "请查收", "项目介绍", "诚邀", "特向您发送", "下载附件查阅",
+      "Call for Paper", "Invitation to Submit", "Invitation to Join",
+      "Scopus-Indexed", "Publication Opportunity", "ESI",
+      "Personal.*Editor", "Human Academic Editing",
+      "Contribute Your Work", "Register Now", "Deadline Extended"
+    ]
+  },
+
+  "defaults": {
+    "unmatched": "read",
+    "_comment": "未命中任何规则、也没有机器特征时，按 read 而非 reply。宁可多看一眼，也不让垃圾混进待办。"
+  }
+}
