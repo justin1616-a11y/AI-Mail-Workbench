@@ -100,17 +100,27 @@ agent_created: true
 ## §4 草稿队列（Worker 流程）
 
 工作台的「AI 起草」只是把任务**排进队列**，需要一个 Worker 来认领才会生成草稿。
-本技能所在目录提供 `mail_workbench/cli.py` 或本项目的 `scripts/mw.py`（若存在）。
 
-流程：
+代码目录自带命令行工具（16 个子命令）。**先诊断**：
 
 ```
-python -m mail_workbench.cli --help        # 看可用命令
+python -m mail_workbench.cli doctor                 # 健康检查
+python -m mail_workbench.cli buckets                # 看工作桶
+python -m mail_workbench.cli jobs --status queued   # 看排队中的任务
+python -m mail_workbench.cli show <job_id> --context
 ```
+
+想看契约闭环跑起来是什么样（不含 AI，只演示流程）：
+
+```
+python -m mail_workbench.cli worker --rounds 1
+```
+
+### 你要亲自写草稿时，走 HTTP
 
 1. **认领**：`GET /api/v2/draft-jobs/next?worker=<名字>`
 2. **取上下文**：`GET /api/v2/draft-jobs/{id}/context?worker=<名字>`
-3. **写草稿**：`POST /api/v2/draft-jobs/{id}/draft`（body 带 `draft_text`、`worker`）
+3. **写回**：`POST /api/v2/draft-jobs/{id}/draft`（body 带 `draft_text`、`worker`）
 
 **两条硬边界**：
 

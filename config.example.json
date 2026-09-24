@@ -1,0 +1,36 @@
+{
+  "_说明": "邮件工作台的配置模板。不用手动复制 —— 双击 install.cmd 走一遍向导，它会自动生成 config.json。",
+  "_密码在哪": "密码不写在这里。放在 ~/.workbuddy/secrets/mail.cred（向导会帮你建），或用环境变量 SJTU_MAIL_PASS。",
+
+  "imap_host": "mail.sjtu.edu.cn",
+  "imap_port": 993,
+  "smtp_host": "mail.sjtu.edu.cn",
+  "smtp_port": 465,
+
+  "user": "你的邮箱@sjtu.edu.cn",
+  "from_name": "你的名字",
+
+  "_index_path说明": "Foxmail 本地索引目录（可选）。装了 Foxmail 7.x 的话向导会自动探测填好；留空则只用 IMAP，搜索会走服务器、慢一些。",
+  "index_path": "",
+
+  "drafts_folder": "Drafts",
+  "_sent_folder说明": "发送后把副本追加到哪个文件夹。SMTP 只管投递 —— 服务器**不会**替你留已发送副本，客户端得自己追加一封进去（Foxmail 就是这么做的），所以这项必须写对，否则发出去的信在「已发送邮件」里找不到。中文名（如「已发送」）也支持（会自动按 IMAP 修改版 UTF-7 编码）。",
+  "sent_folder": "Sent",
+  "_save_sent说明": "设为 false 则不追加副本（有些邮箱服务器会自己存一份，那种情况下开着会产生重复）。默认 true。",
+  "save_sent_to_server": true,
+  "_trash_folder说明": "「移到已删除邮件」实际要移到哪个文件夹。界面上写的是「已删除邮件」，但 IMAP 上这个文件夹的原名通常是 Trash —— 交大邮箱就是。所以一般不用改；如果你的邮箱里它叫别的名字，改这里即可。",
+  "trash_folder": "Trash",
+  "page_size": 60,
+
+  "_sync_folders说明": "同步哪些文件夹（侧边栏里就显示哪些）。**你自己的自建文件夹要写在这里**，中文名可以直接写（会自动按 IMAP 修改版 UTF-7 编码）。⚠️ 用 PowerShell 的 Invoke-RestMethod 手工发同步请求时，默认不按 UTF-8 编码请求体，中文名会变成 ???? 并报 EXAMINE failed —— 那是请求端的问题，不是文件夹不存在。",
+  "sync_folders": ["INBOX", "Sent", "Drafts", "Junk", "Trash"],
+
+  "_classify说明": "邮件分级规则：决定列表里那些「★重点 / ⚙系统 / ×可忽略」标签怎么打。下面是交大场景的默认值，换成你自己常打交道的发件人即可；整段删掉也能跑（用内置默认）。",
+  "classify": {
+    "vip_senders": ["office@example.edu"],
+    "vip_domains": ["nsfc.gov.cn", "catl.com", "sunrayip.com"],
+    "act_senders": ["application.infoplus@sjtu.edu.cn"],
+    "act_domains": ["xcdsystem.com", "easychair.org", "editorialmanager.com", "elsevier.com", "pro.nsfc.gov.cn"],
+    "trusted": ["sjtu.edu.cn", "qq.com", "gmail.com", "163.com", "126.com", "outlook.com", "edu.cn", "gov.cn"]
+  }
+}

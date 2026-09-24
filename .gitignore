@@ -1,0 +1,53 @@
+# ============================================================
+#  隐私闸门 —— 以下内容**绝对不要提交**
+# ============================================================
+#  这个仓库会被别人 clone。任何一条漏进来，都可能泄露
+#  真实邮箱地址、邮件内容、附件（比如别人的简历）或凭据。
+#  往仓库里加文件前，先在这里确认一遍。
+
+# --- 配置与凭据 ---
+config.json
+*.cred
+.env
+.env.*
+secrets/
+
+# --- 邮件数据（最要害）---
+data/
+mail_workbench/data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# --- 邮件附件（可能含他人隐私，如简历）---
+attachments/*
+!attachments/.gitkeep
+
+# --- 运行日志（含真实邮件主题与发件人）---
+logs/*
+!logs/.gitkeep
+sent-log/*
+!sent-log/.gitkeep
+reply-queue/*
+!reply-queue/.gitkeep
+*.log
+_launch.log
+_watchdog.log
+_server.log
+*.pid
+
+# --- 开发与自检产物（不属于发行包）---
+verification/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+dist/
+.workbuddy/
+_js_check/
+_v2_*.png
+_v2_*.json
+*.cjs.tmp
