@@ -32,7 +32,8 @@ from . import metrics as metricsmod
 from . import util
 from .constants import (
     BUCKET_HINT, BUCKET_LABEL, BUCKETS, CLASSIFICATIONS, CLASS_TREE_DOT,
-    CLASS_TREE_LABEL, DRAFT_MODES, FOLDER_FOXMAIL, REPLY_CONTROLS,
+    CLASS_TREE_LABEL, DRAFT_MODE_LABEL, DRAFT_MODES, FOLDER_FOXMAIL,
+    REPLY_CONTROL_GROUP, REPLY_CONTROL_LABEL, REPLY_CONTROLS,
     SYSTEM_FOLDERS, WF_LABEL,
 )
 from .draft import queue as dq
@@ -567,10 +568,17 @@ def h_constants(req):
         "classifications": CLASSIFICATIONS,
         "workflow_states": WF_LABEL,
         "draft_modes": DRAFT_MODES,
+        # 模式与改写按钮的**中文文案**。UI 之前直接渲染英文标识符
+        # （quick / normal / shorter / strip_boilerplate），那是给程序读的。
+        "draft_mode_labels": DRAFT_MODE_LABEL,
         "reply_controls": REPLY_CONTROLS,
+        "reply_control_labels": REPLY_CONTROL_LABEL,
+        "reply_control_group": REPLY_CONTROL_GROUP,
         "buckets": BUCKET_LABEL,
         "bucket_hints": BUCKET_HINT,
         "work_buckets": list(BUCKETS),
+        # 批处理可用的动作（UI 据此渲染按钮，不再在前端硬编码一份）
+        "batch_actions": list(actionsmod.BATCH_ACTIONS),
         # 侧边栏标签树：名称与圆点色走常量，UI 不硬编码（改一处就够）
         "class_tree": [{"key": c, "label": CLASS_TREE_LABEL[c], "dot": CLASS_TREE_DOT[c]}
                        for c in CLASSIFICATIONS],
@@ -664,13 +672,20 @@ def h_messages(req):
     """
     q = req.query
     folder = q.get("folder", [None])[0]
-    if folder == FOLDER_FOXMAIL:            # 伪文件夹：改用 source 过滤
+    source = q.get("source", [None])[0]
+    if folder == FOLDER_FOXMAIL:
+        # 伪文件夹：库里没有这个 folder 值，历史邮件靠 source='foxmail' 标识。
+        # 这里原来**只把 folder 置空**、没有设 source —— 结果这个伪文件夹的查询
+        # 等价于「不带任何过滤」，返回的是全库最新的 40 封（全是 IMAP），
+        # 跟「Foxmail 历史」没有任何关系。任何按它过滤的调用方（自检脚本、
+        # 以后可能加的「点底部索引数进历史列表」）都会拿到错的数据。
+        # 现在真的按 source 过滤。
         folder = None
+        source = "foxmail"
     classification = q.get("classification", [None])[0]
     limit = min(int(q.get("limit", [60])[0]), 500)
     offset = int(q.get("offset", [0])[0])
     unread = q.get("unread", ["0"])[0] in ("1", "true")
-    source = q.get("source", [None])[0]
     if q.get("index", ["0"])[0] in ("1", "true"):
         source = "foxmail"
     rows = G.repo.list_messages(folder=folder, limit=limit, offset=offset,
@@ -831,7 +846,16 @@ def h_job_context(req):
 
 @ROUTER.get(r"/api/draft-jobs/(?P<job_id>[^/]+)/events")
 def h_job_events(req):
-    return ok({"events": G.repo.job_events(req.path_params["job_id"])})
+    """任务的事件审计轨迹。
+
+    同其它 `/draft-jobs/{id}/*` 端点一样，**任务不存在要报 404** ——
+    这里原来无条件返回 `{"events": []}`，于是「拼错 job_id」和
+    「这个任务确实没有事件」在界面上长得一模一样，排查时会被带偏。
+    """
+    jid = req.path_params["job_id"]
+    if not G.repo.get_job(jid):
+        return err("任务不存在：%s" % jid, 404)
+    return ok({"events": G.repo.job_events(jid)})
 
 
 @ROUTER.post(r"/api/draft-jobs/(?P<job_id>[^/]+)/plan")
@@ -1471,11 +1495,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_file(ui)
             return self._send(UI_PLACEHOLDER, 200)
         if method == "GET" and path == "/classic":
-            # V1 的经典视图原样保留（升级不破坏既有用法）
-            legacy = os.path.join(G.cfg["project_root"], "inbox.html")
-            if os.path.exists(legacy):
-                return self._send_file(legacy)
-            return self._send({"ok": False, "error": "找不到 V1 经典视图 inbox.html"}, 404)
+            # V1 的经典视图。
+            # 这里原来找的是 `inbox.html` —— 那个文件从来不存在（V1 的页面叫
+            # `web/index.html`），于是文档里承诺的 `/classic` 一直是 404：
+            # 「直接敲 URL 就能到」到不了。现在按真实文件名找，并保留
+            # `inbox.html` 作为兼容回退。
+            root = G.cfg["project_root"]
+            for rel in ("web/index.html", "inbox.html"):
+                legacy = os.path.join(root, rel)
+                if os.path.exists(legacy):
+                    return self._send_file(legacy)
+            return self._send({"ok": False,
+                               "error": "找不到 V1 经典视图（应为 web/index.html）"}, 404)
         if method == "GET" and path == "/favicon.ico":
             return self._send(b"", 204)
         if method == "GET" and path == "/api/events":

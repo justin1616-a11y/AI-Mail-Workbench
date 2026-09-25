@@ -156,11 +156,4 @@ export const api = {
      轮询接口刻意不下发草稿内容，防止旧页面实例把它吃掉。 */
   replyDraft: (id) =>
     req('/api/reply-draft' + (id ? '?id=' + encodeURIComponent(id) : '')),
-
-  replyConsume: (id) =>
-    req('/api/reply-consume', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    }),
 };

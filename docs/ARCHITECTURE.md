@@ -11,10 +11,13 @@ Foxmail 继续当成熟桌面客户端与历史邮件来源；**最终判断与�
 > 而 `approved` 只能由人点「审核通过」产生，并配一次性 token。
 
 > 本文档面向**想改代码的人**：架构、模块地图、状态机、API 契约、安全边界、踩过的坑。
-> 只想装来用 → 看 **[INSTALL.md](INSTALL.md)**。
-> 让 AI 通过本工作台帮你操作邮件 → 看 **[SKILL.md](SKILL.md)**。
-> **V1 → V2 做了什么、为什么这么做、验证结果** → 看 **[V2-MIGRATION.md](V2-MIGRATION.md)**。
-> **V1 文档已归档**为 [README-V1.md](README-V1.md) / [SKILL-V1.md](SKILL-V1.md)。
+> 只想装来用 → 看 **[../README.md](../README.md)** 与 **[../INSTALL.md](../INSTALL.md)**。
+> 让 AI 通过本工作台帮你操作邮件 → 看 **[AGENT-CONTRACT.md](AGENT-CONTRACT.md)**。
+
+> ⚠️ 本文是从开发仓库的 README 保留下来的**完整版**，其中提到
+> `V2-MIGRATION.md` / `README-V1.md` / `SKILL-V1.md` 三个文件 ——
+> **它们只在开发仓库里，发行包不含**（发行包面向使用者，不需要迁移报告）。
+> 需要那三份文档请到开发仓库取。
 
 ---
 
@@ -122,7 +125,7 @@ Foxmail 继续当成熟桌面客户端与历史邮件来源；**最终判断与�
 
 ```
 mail_workbench/
-├── server.py            HTTP 路由 + SSE + App 装配（58 个端点）
+├── server.py            HTTP 路由 + SSE + App 装配（67 个端点：31 GET + 36 POST）
 ├── cli.py               命令行入口（sync / serve / recovery / ...）
 ├── config.py            配置与凭据加载（凭据外置，绝不入库）
 ├── constants.py         枚举与中文标签的唯一来源
@@ -160,7 +163,7 @@ mail_workbench/
 │   ├── repo.py              数据访问层
 │   └── search.py            搜索查询解析（sender:/subject:/after:/...）
 ├── ui/index.html            V2 工作台单页（原生 JS，无框架）
-└── tests/                   168 个单元/回归测试
+└── tests/                   240 个单元/回归测试
 ```
 
 其他关键文件（项目根）：
@@ -172,7 +175,7 @@ mail_workbench/
 | `watchdog.py` | 保活：每 15 秒探 `/api/health`，挂了拉起 |
 | `uitest_v2_workbench.cjs` | V2 界面自检（Playwright），产出截图与 JSON 报告 |
 | `_e2e_contract.py` | **端到端契约验证**：走完 claim→context→plan→draft→review→send gate |
-| `README-V1.md` / `SKILL-V1.md` | V1 文档归档 |
+| `../README-V1.md` / `../SKILL-V1.md` | V1 文档归档（**仅开发仓库有，发行包不含**） |
 
 ---
 
@@ -426,7 +429,7 @@ V2 是在它之上**增量长出**的，V1 一行功能都没丢。
 
 | 验证 | 结果 |
 |---|---|
-| V2 单元/回归测试 | **168 个全部通过**（含状态机合法性、幂等、租约原子性、退避、gate、上下文最小性、线程聚合、规则分类、搜索操作符、Foxmail 索引解析、发送门禁、snooze/followup、工作桶、迁移、V1 功能回归、性能） |
+| V2 单元/回归测试 | **240 个全部通过**（含状态机合法性、幂等、租约原子性、退避、gate、上下文最小性、线程聚合、规则分类、搜索操作符、Foxmail 索引解析、发送门禁、snooze/followup、工作桶、迁移、V1 功能回归、性能） |
 | V1 Playwright UI 测试 | **全部通过、零控制台错误**（证明 V1 零回归） |
 | V2 界面自检 | **verdict: PASS**（零 console error） |
 | 端到端契约验证 | **全部通过**（见下） |
@@ -883,7 +886,7 @@ WorkBuddy 不得调用这个端点（见 [SKILL.md](SKILL.md)）。
 ## 十五、验证怎么做
 
 ```bash
-# 1) 单元 / 回归测试（216 个）
+# 1) 单元 / 回归测试（240 个）
 python -X utf8 -m unittest discover -s mail_workbench/tests -t .
 
 # 2) V1 UI 零回归（需要 Node + playwright-core）

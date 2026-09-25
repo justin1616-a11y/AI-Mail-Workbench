@@ -50,6 +50,8 @@
   .btn.danger{border-color:#f0bcbe;color:var(--err)}
   .btn.ghost{border-color:transparent;color:var(--muted)}
   .btn.sm{padding:3px 8px;font-size:12px;border-radius:6px}
+  /* 「已打开」态的按钮（星标 / 未读这类开关）：一眼看出当前处于哪一边 */
+  .btn.on{background:var(--accent-soft);border-color:#bcd2ff;color:var(--accent);font-weight:600}
   .btn:disabled{opacity:.45;cursor:not-allowed}
 
   /* ---------- body ---------- */
@@ -114,6 +116,12 @@
   .listhead{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);
             font-size:12px;color:var(--muted);flex-wrap:wrap}
   .listhead b{color:var(--text);font-size:12.5px}
+  /* 撤销条：独占一行、淡蓝底、跟在列表头下面。
+     它是「刚刚那一步」的后悔药，必须在视线里（V1 有，V2 一度丢了）。 */
+  .undobar{flex-basis:100%;display:flex;align-items:center;gap:8px;
+           margin-top:2px;padding:5px 10px;border-radius:8px;
+           background:var(--accent-soft);border:1px solid #cddcff;
+           color:#33415c;font-size:12.5px}
   /* 全选：放在列表最上方、贴着行内复选框那一列，位置一眼就对得上 */
   .selall{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;
           padding:2px 6px 2px 2px;border-radius:6px;flex:none}
@@ -174,6 +182,24 @@
   .chip.mini-btn{cursor:pointer;border:0;background:transparent;color:var(--muted);
                  font-family:inherit;font-size:12px;padding:1px 4px;line-height:1}
   .chip.mini-btn:hover{background:#dde3ec;border-radius:6px}
+  /* 线程条：一行一封。↘ 收到 / ↗ 我发出；当前这封左侧加一条主色竖线。 */
+  .trow{display:grid;grid-template-columns:16px 96px minmax(0,1fr) 56px;gap:6px;
+        padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;align-items:baseline}
+  .trow:hover{background:var(--hover)}
+  .trow.cur{box-shadow:inset 3px 0 0 var(--accent);background:var(--accent-soft)}
+  .tdir{color:var(--muted);text-align:center}
+  .twho{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tdir, .tdate{color:var(--muted)}
+  .tdate{text-align:right;font-size:11.5px}
+  .trow .tsnip{color:#59616c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 快捷键 / 搜索语法帮助浮层 —— 用弹窗复用 .modal 样式，内容自己排 */
+  .helpbox{font:12px/1.85 ui-monospace,Consolas,"Microsoft YaHei",monospace;
+           white-space:pre-wrap;background:#f7f9fc;border:1px solid var(--line);
+           border-radius:8px;padding:12px;color:#333940;overflow:auto;max-height:52vh}
+  .keyrow{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;
+          padding:4px 0;border-bottom:1px solid #f0f2f5;font-size:12.5px}
+  .keyrow:last-child{border-bottom:0}
+  .keyrow .kk{color:var(--muted)}
   /* 仅知会：不是工作桶，样式上刻意跟上面五个区分开 */
   .mini.info{cursor:pointer;border-radius:6px;padding:4px 10px}
   .mini.info:hover{background:var(--hover)}
@@ -264,6 +290,7 @@
     <div class="search">
       <span style="color:var(--muted)">⌕</span>
       <input id="q" placeholder="搜索 / 操作符：sender: subject: after:7d has:attachment status:waiting label:important">
+      <button class="chip mini-btn" id="searchHelp" title="搜索语法说明（在列表里按 ? 是快捷键帮助）">?</button>
     </div>
     <button class="btn" id="briefBtn">今日简报</button>
     <button class="btn" id="healthBtn">健康</button>
@@ -292,7 +319,9 @@
     <span><kbd>u</kbd> 撤销</span>
     <span><kbd>e</kbd> 外部客户端</span>
     <span><kbd>c</kbd> 写邮件</span>
+    <span><kbd>g</kbd> 刷新</span>
     <span><kbd>/</kbd> 搜索</span>
+    <span><kbd>?</kbd> 帮助</span>
     <span class="spacer"></span>
     <span id="statustext"></span>
   </div>
@@ -344,12 +373,51 @@ function rel(iso){
 }
 const CLASS_CHIP = {IMPORTANT:"vip",REPLY:"reply",SYSTEM:"system",READ:"read",DISMISS:"dismiss"};
 const CLASS_TEXT = {IMPORTANT:"★ 重点",REPLY:"✉ 要回",SYSTEM:"⚙ 系统",READ:"○ 看一眼",DISMISS:"× 可忽略"};
-/* 批量操作按钮：[动作, 文案]。动作名必须与后端 BATCH_ACTIONS 对齐。 */
-const BATCH_BTNS = [
-  ["archive", "批量归档"], ["ignore", "批量忽略"], ["read", "标为已读"],
-  ["star", "加星标"], ["trash", "批量删除"],
-];
-const BATCH_TEXT = Object.fromEntries(BATCH_BTNS.map(([a, t]) => [a, t]));
+/* 批量操作：**动作名必须与后端 BATCH_ACTIONS 对齐**。
+   这里只留「文案 + 显示顺序」，**可用动作以 /constants 的 batch_actions 为准**
+   （见 batchBtnList()）。
+
+   为什么改成这样：以前前端自己写死一份 5 个按钮的清单，后端另有一份
+   7 个动作的清单，两份各自演化 —— 后端早就支持 `unread`（标未读），
+   而前端从来没渲染过它，于是 V2 的批量条里**根本没有「标未读」**，
+   而 V1 有。用户看错一封、点开被自动标已读之后，无处可退。
+   现在只要后端加了动作，界面自动出现（文案缺了才不显示）。 */
+const BATCH_LABEL = {
+  archive:"批量归档", ignore:"批量忽略", read:"标为已读", unread:"标为未读",
+  star:"加星标", done:"批量完成", waiting:"批量等对方", trash:"批量删除",
+};
+const BATCH_ORDER = ["archive", "ignore", "read", "unread", "star", "done", "waiting", "trash"];
+/* 这些批量动作**不**标红 —— 只有删除是破坏性的 */
+const BATCH_DANGER = ["trash"];
+function batchBtnList(){
+  const avail = (S.constants && Array.isArray(S.constants.batch_actions)
+                 && S.constants.batch_actions.length)
+    ? S.constants.batch_actions : Object.keys(BATCH_LABEL);
+  const known = BATCH_ORDER.filter(a => avail.indexOf(a) >= 0);
+  const extra = avail.filter(a => BATCH_ORDER.indexOf(a) < 0);
+  const list = known.concat(extra).filter(a => BATCH_LABEL[a]);
+  return list.length ? list : ["archive", "ignore", "read", "trash"];
+}
+const batchLabel = (a) => BATCH_LABEL[a] || a;
+
+/* 草稿模式 / 快捷改写按钮的**中文文案**：由后端常量给（见 /constants）。
+   原来直接把标识符当按钮文字，界面上是一排
+   `quick normal detailed formal academic` 和
+   `shorter more_formal strip_boilerplate` —— 那是给程序读的。 */
+const shortLabel = (s) => String(s == null ? "" : s).split(/[（(]/)[0].trim();
+const MODE_LABEL = () => S.constants.draft_mode_labels || {};
+const RC_LABEL = () => S.constants.reply_control_labels || {};
+
+/* undo_log 里的动作名 → 人话。撤销条要告诉用户「按下去会撤回什么」，
+   只写「撤销」等于让他赌一把。 */
+const UNDO_LABEL = {
+  done:"完成", ignore:"忽略", archive:"归档", snooze:"延后", waiting:"等对方回复",
+  star:"加星标", unstar:"取消星标", read:"标为已读", unread:"标为未读",
+  trash:"删除", restore:"恢复", reopen:"重新打开",
+  batch_archive:"批量归档", batch_ignore:"批量忽略", batch_done:"批量完成",
+  batch_read:"批量标为已读", batch_unread:"批量标为未读", batch_star:"批量加星标",
+  batch_trash:"批量删除", batch_waiting:"批量等对方",
+};
 
 /* ===================================================================== */
 /* 状态                                                                  */
@@ -372,7 +440,8 @@ const S = {
   batchBusy:false,
   items:[], cur:-1, curItem:null, selected:new Set(),
   detail:null, job:null, view:"list",  // list | brief | health
-  brief:"", searchMode:false, lastQuery:"", constants:{}, health:null,
+  brief:"", searchMode:false, lastQuery:"", searchExplain:"", constants:{}, health:null,
+  thread:null, undo:null,
 };
 /* 当前视图对应的条目。folder/tag 视图的数据在 S.folderItems。 */
 function scopeItems(){
@@ -522,7 +591,10 @@ function renderSide(){
 
   el.innerHTML = h;
 
-  const cb = $("composeBtn"); if(cb) cb.onclick = openCompose;
+  const cb = $("composeBtn");
+  // 箭头函数包一层：否则 openCompose 会把 MouseEvent 当成 prefill
+  // （见 openCompose 里的说明）
+  if(cb) cb.onclick = ()=>openCompose();
   el.querySelectorAll("[data-bk]").forEach(n=>n.onclick=()=>setScope("bucket", n.dataset.bk));
   el.querySelectorAll("[data-folder]").forEach(n=>n.onclick=()=>setScope("folder", n.dataset.folder));
   el.querySelectorAll("[data-tag]").forEach(n=>n.onclick=()=>setScope("tag", n.dataset.tag));
@@ -542,8 +614,50 @@ function setScope(type, id){
 /*   「发送」      → 弹二次确认 → POST /compose/send {confirm:"SEND"}     */
 /* confirm 字段是服务端强制的第二道闸（防脚本/AI 误触），不是走过场。     */
 /* ===================================================================== */
+/* 写邮件的内容**本机暂存**（localStorage）。
+   为什么要有：这个弹窗以前关掉就什么都没了 —— 写了两百字、手滑点一下
+   「关闭」或者误按 Esc，全部白写。参考实现（Gmail / Roundcube / Aerion）
+   都会自动存草稿，这里用最轻的办法（浏览器本地存储，不进邮箱、不上网）：
+     · 打字即暂存；内容清空则自动删掉
+     · 点「写邮件」且本地有暂存 → 自动填回来
+     · 存入草稿箱 / 发送成功 → 清掉暂存
+   注意它**不写邮箱的草稿箱**（那要用户明确点「存入草稿箱」），
+   所以不会在别人的客户端里凭空多出一封写了一半的信。 */
+const COMPOSE_KEY = "mw.compose.draft.v1";
+function saveComposeLocal(){
+  try{
+    const g = (id)=> (($(id)||{}).value || "");
+    const d = {to:g("cTo"), subject:g("cSubject"), body:g("cBody"),
+               at:new Date().toISOString()};
+    if((d.to+d.subject+d.body).trim()) localStorage.setItem(COMPOSE_KEY, JSON.stringify(d));
+    else localStorage.removeItem(COMPOSE_KEY);
+  }catch(e){ /* 隐私模式 / 存储满：忽略，不影响发信 */ }
+}
+function loadComposeLocal(){
+  try{ const s = localStorage.getItem(COMPOSE_KEY); return s ? JSON.parse(s) : null; }
+  catch(e){ return null; }
+}
+function clearComposeLocal(){
+  try{ localStorage.removeItem(COMPOSE_KEY); }catch(e){}
+}
+
 function openCompose(prefill){
-  const p = prefill||{};
+  /* ⚠️ 必须区分「真的传了 prefill」和「被当成 onclick 处理器调用」。
+     直接写 `cb.onclick = openCompose` 的话，浏览器会把 **MouseEvent** 传进来 ——
+     它是个对象、truthy，于是「用户自己点写邮件」和「回复某封信」变得一模一样，
+     本机暂存的恢复逻辑永远不会触发（审计脚本抓到的就是这个）。
+     这里两道防线：调用处改成箭头函数（见 renderSide），
+     函数内再做一次类型判定（防止别处再误绑）。 */
+  const isReal = prefill && typeof prefill === "object"
+    && !(typeof Event !== "undefined" && prefill instanceof Event);
+  let p = isReal ? Object.assign({}, prefill) : {};
+  let restored = false;
+  /* 带 prefill = 回复 / 转发，用户心意已决，不要用旧草稿盖掉它；
+     不带 prefill = 用户自己点「写邮件」，这时才恢复上次的残稿。 */
+  if(!isReal){
+    const d = loadComposeLocal();
+    if(d && String(d.body||"").trim()){ p = d; restored = true; }
+  }
   const root = $("modalRoot");
   root.innerHTML = `<div class="modal" id="composeModal">
     <div class="mbox">
@@ -558,7 +672,8 @@ function openCompose(prefill){
           <textarea id="cBody" placeholder="正文…">${esc(p.body||"")}</textarea></div>
       </div>
       <div class="mfoot">
-        <span class="mhint">「发送」会立刻发出且无法撤回；「存入草稿箱」只存不发</span>
+        <span class="mhint">「发送」会立刻发出且无法撤回；「存入草稿箱」只存不发。
+          编辑中的内容会暂存在本机，关掉也不会丢。</span>
         <span class="spacer"></span>
         <button class="btn ghost" data-m="cancel">取消</button>
         <button class="btn" data-m="draft">存入草稿箱</button>
@@ -566,9 +681,25 @@ function openCompose(prefill){
       </div>
     </div></div>`;
   root.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>composeAction(b.dataset.m, b));
+  // 打字即暂存 —— 不做防抖：localStorage 写一次是微秒级，而丢字是不可逆的
+  ["cTo","cSubject","cBody"].forEach(id=>{ const n=$(id); if(n) n.oninput = saveComposeLocal; });
   const t = $("cTo"); if(t) t.focus();
+  if(restored) toast("已恢复上次没写完的草稿（发送或存入草稿箱后自动清掉）","warn");
 }
-function closeCompose(){ const r=$("modalRoot"); if(r) r.innerHTML=""; }
+/* 关闭前问一句 —— 内容本身已经暂存，这一问只是确认「你不是误触」。
+   force=true 用于「发送成功 / 已存入草稿箱」之后的自动关闭。 */
+function closeCompose(force){
+  const root = $("modalRoot");
+  if(!root || !$("composeModal")) return;
+  if(!force){
+    const to   = (($("cTo")||{}).value||"").trim();
+    const body = (($("cBody")||{}).value||"").trim();
+    if((to || body) && !window.confirm(
+        "关闭前确认：\n\n内容会暂存在本机，下次点「写邮件」可以恢复。\n现在关闭？")) return;
+    saveComposeLocal();
+  }
+  root.innerHTML = "";
+}
 async function composeAction(kind, btn){
   if(kind==="cancel"){ closeCompose(); return; }
   const to = ($("cTo")||{}).value || "";
@@ -586,8 +717,9 @@ async function composeAction(kind, btn){
     const r = await api(kind==="send" ? "/compose/send" : "/compose/draft",
       {method:"POST", body:{to, subject, body, confirm: kind==="send" ? "SEND" : ""}});
     if(!r.ok){ toast(r.error||"失败","err"); return; }
-    toast(r.data.message || (kind==="send" ? "已发送" : "已存入草稿箱"),"ok");
-    closeCompose();
+    toast((r.data||{}).message || (kind==="send" ? "已发送" : "已存入草稿箱"),"ok");
+    clearComposeLocal();   // 内容已经落到服务器（草稿箱 / 已发送），本机暂存清掉
+    closeCompose(true);    // 成功后的自动关闭不再确认（force）
     // 发信/存草稿都会改变「已发送」「草稿箱」的内容，刷新一次侧边栏计数；
     // 顺带轻量同步一次 Sent，让线程的「等对方回复」立刻准确。
     loadFolders();
@@ -678,16 +810,58 @@ function renderList(){
         S.onlyUnread ? "显示全部邮件" : "只列出未读邮件（推荐的清未读方式）"}">${
         S.onlyUnread ? "↩ 显示全部" : "仅未读 "+unreadN}</button>` : "";
 
-  head.innerHTML = selBox +
-    `<b>${esc(scopeLabel())}</b> · ${total} ${S.onlyUnread? "封未读" : scopeUnit()}` +
-    (truncated
-      ? ` <span style="color:var(--muted)">（共 ${S.folderTotal} 封，显示前 ${total}）</span>`:"") +
-    unreadBtn +
+  /* 搜索态的表头也由这里统一渲染 —— 这是修掉的第二个真实缺陷。
+     以前 doSearch() 自己写一次 `#listhead.innerHTML`，紧接着调 renderList()，
+     而 renderList 又把 `#listhead` 整个覆盖掉。后果：搜完之后
+     条数、命中说明、**「退出搜索」按钮全部被冲掉** ——
+     列表里是搜索结果、表头却还写着上一个视图，而且找不到退出入口
+     （只能清空输入框再回车）。审计脚本抓到的就是这个。
+     表头只能有一处渲染点。 */
+  const labelHtml = S.searchMode
+    ? `<b>搜索</b>${S.lastQuery? " " + esc(S.lastQuery) : ""} · ${total} 条` +
+      (S.searchExplain? ` <span style="color:var(--muted)">${esc(S.searchExplain)}</span>` : "")
+    : `<b>${esc(scopeLabel())}</b> · ${total} ${S.onlyUnread? "封未读" : scopeUnit()}` +
+      (truncated
+        ? ` <span style="color:var(--muted)">（共 ${S.folderTotal} 封，显示前 ${total}）</span>`:"");
+  const exitSearchBtn = S.searchMode
+    ? `<button class="btn sm ghost" id="exitSearch">退出搜索</button>` : "";
+
+  /* 「刚刚那一步」的撤销入口。
+     V1 的列表上方有一条常驻撤销条，V2 把它丢了 —— 结果 `u` 这个快捷键成了撤销的
+     **唯一**入口，而底部那行小字没人会去读。删除、归档、批量操作之后必须有
+     看得见的后悔药，否则「删错了」这件事就没有出路（虽然服务端一直留着 undo_log）。
+     只对**新发生的**操作显示：页面加载时把当前最后一条 undo 的 id 记为基线，
+     否则一进页面就挂一条 15:45 的旧记录，反而成了噪音。 */
+  const undoBarHtml = S.undo ? `<div class="undobar">
+    <span>可撤销：<b>${esc(UNDO_LABEL[S.undo.action]||S.undo.action)}</b>${
+      S.undo.payload && S.undo.payload.message_ids
+        ? "（" + S.undo.payload.message_ids.length + " 封）" : ""}</span>
+    <span class="spacer"></span>
+    <button class="btn sm" id="undoBtn" title="也可以直接按 u">撤销</button>
+    <button class="btn sm ghost" id="undoHide" title="先不撤，收掉这条提示">×</button>
+  </div>` : "";
+
+  head.innerHTML = selBox + labelHtml + unreadBtn + exitSearchBtn +
     (cnt? ` · <span style="color:var(--accent)">已选 ${cnt}</span>`:"") +
-    (cnt? `<span class="spacer"></span>` + BATCH_BTNS.map(([a, t]) =>
-      `<button class="btn sm${a==="trash"?" danger":""}" data-b="${a}"${
-        S.batchBusy?" disabled":""}>${t}</button>`).join("") +
-      `<button class="btn sm ghost" id="clearSel"${S.batchBusy?" disabled":""}>取消选择</button>`:"");
+    (cnt? `<span class="spacer"></span>` + batchBtnList().map(a =>
+      `<button class="btn sm${BATCH_DANGER.indexOf(a)>=0?" danger":""}" data-b="${esc(a)}"${
+        S.batchBusy?" disabled":""}>${esc(batchLabel(a))}</button>`).join("") +
+      `<button class="btn sm ghost" id="clearSel"${S.batchBusy?" disabled":""}>取消选择</button>`:"")
+    /* 撤销条独占一行（flex-basis:100% 让它落到第二行）——
+       它是「时间敏感」的反馈，不该和批量按钮挤在一起。
+       变量名不能叫 ub —— 上面「仅未读」按钮已经用了 ub（`Identifier 'ub'
+       has already been declared`，由内联脚本的 node --check 抓到）。 */
+    + undoBarHtml;
+  const exb = $("exitSearch");
+  if(exb) exb.onclick = exitSearch;
+  const ubBtn = $("undoBtn");
+  if(ubBtn) ubBtn.onclick = ()=>{
+    undoSeen = (S.undo||{}).id || 0;      // 先记基线，撤销后别再挂出来
+    S.undo = null; renderList();
+    undoLast();
+  };
+  const ubHide = $("undoHide");
+  if(ubHide) ubHide.onclick = ()=>{ S.undo = null; renderList(); };
   const chk = $("selAllChk");
   if(chk){
     // 部分选中：复选框画成「横杠」，否则用户看不出「选了一半」
@@ -715,7 +889,7 @@ function renderList(){
     const job = it.job_status? `<span class="chip ${it.job_status==="needs_input"?"warn":"job"}">${esc(it.job_status_label||it.job_status)}</span>`:"";
     const miss = it.missing_count? `<span class="chip warn">缺${it.missing_count}项</span>`:"";
     const cls = it.classification? `<span class="chip ${CLASS_CHIP[it.classification]||""}">${esc(CLASS_TEXT[it.classification]||it.classification)}</span>`:"";
-    return `<div class="row ${it.unread?"unread":""} ${S.selected.has(it.message_id)?"sel":""} ${i===S.cur?"cur":""}" data-i="${i}">
+    return `<div class="row ${it.unread?"unread":""} ${S.selected.has(it.message_id)?"sel":""} ${i===S.cur?"cur":""}" data-i="${i}" data-mid="${esc(it.message_id)}">
       <div class="chk ${S.selected.has(it.message_id)?"on":""}" data-chk="${i}"></div>
       <div class="maincol">
         <div class="sub">${esc(it.subject||"(无主题)")}</div>
@@ -844,6 +1018,18 @@ async function openDetail(item, withBody=true){
   S.job = job;
   const cls = m.classification? `<span class="chip ${CLASS_CHIP[m.classification]}">${esc(CLASS_TEXT[m.classification])}</span>`:"";
   const atts = (m.attachments||[]).map(a=>attChip(a)).join(" ");
+  /* Foxmail 历史记录**没有服务器副本**（正文都在 Foxmail 里加密存放），
+     因此一切「改服务器标志」的动作注定失败：归档 / 星标 / 未读 / 删除
+     都会拿到一句「该邮件没有服务器 UID」。
+     线上日志里真实发生过 —— 用户在历史邮件上依次点了这几个按钮，
+     服务端连着回了三个 502，界面只弹一句报错。与其让人点了才失败，
+     不如直接把按钮禁用并把原因写在 title 里。
+     （`done` / `ignore` / `waiting` 不在禁用之列：它们会退化成
+       「只改本地工作流状态」并如实告知服务器标志没同步，本身就是有意义的操作。） */
+  const noUid = (m.source === "foxmail");
+  const noUidTitle = noUid
+    ? ' title="Foxmail 历史记录只有元数据，服务器上没有这封信，改不了服务端标记"'
+    : "";
   el.innerHTML = `
     <div class="dhead">
       <h2>${esc(m.subject||"(无主题)")}</h2>
@@ -865,21 +1051,85 @@ async function openDetail(item, withBody=true){
       <button class="btn primary sm" data-a="reply_ai">✎ AI 起草</button>
       <button class="btn sm" data-a="reply_fast" title="本地模板即时出稿（不调用模型，毫秒级返回）">⚡ 快速草稿</button>
       <button class="btn sm" data-a="reply_manual">人工回复</button>
-      <button class="btn sm" data-a="archive">归档</button>
+      <button class="btn sm" data-a="archive"${noUid?' disabled':''}${noUidTitle}>归档</button>
       <button class="btn sm" data-a="snooze">延后</button>
       <button class="btn sm" data-a="waiting">等对方</button>
       <button class="btn sm" data-a="done">完成</button>
       <button class="btn sm" data-a="ignore">忽略</button>
-      <button class="btn sm" data-a="star">星标</button>
-      <button class="btn sm" data-a="unread">未读</button>
-      <button class="btn sm danger" data-a="trash">删除</button>
+      ${/* 星标与已读做成**真开关**：显示当前状态、再点一下回到反面。
+           原来两个都只单向生效（「星标」永远加星、「未读」永远标未读），
+           于是：已加星的邮件没有取消入口；而「标为已读」在**单封**上根本不存在
+           （批量条里有，详情页没有）—— 用户读完之后想标已读，只能去勾选它再走批量。 */ ""}
+      <button class="btn sm${m.flagged?" on":""}" data-a="${m.flagged?"unstar":"star"}"${
+        noUid?' disabled':''}${m.flagged?' title="点一下取消星标"':noUidTitle}>${
+        m.flagged?"★ 已星标":"☆ 星标"}</button>
+      <button class="btn sm" data-a="${m.unread?"read":"unread"}"${
+        noUid?' disabled':''}${m.unread?' title="点一下标为已读"':noUidTitle}>${
+        m.unread?"标为已读":"标为未读"}</button>
+      <button class="btn sm danger" data-a="trash"${noUid?' disabled':''}${noUidTitle}>删除</button>
       <button class="btn sm ghost" data-a="open_external">外部客户端</button>
     </div>
+    <div id="threadstrip"></div>
     <div class="dscroll"><pre>${esc(m.body_text||"（此封无正文文本；若是 Foxmail 历史邮件，正文需联网按需拉取）")}</pre></div>
     <div id="jobpanel"></div>`;
   el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>doAction(b.dataset.a, m));
   bindAttachments();
   renderJobPanel();
+  loadThreadStrip(el, m);
+}
+
+/* =====================================================================
+ * 线程条：把「同一件事的来回」摆出来
+ *
+ * 为什么需要它：工作桶是按**线程**算的（一个桶里一条 = 一件事），
+ * 但右栏此前只显示**单封邮件**。于是用户在处理「第 4 轮回复」时，
+ * 看不到前三轮说了什么 —— 只能靠正文里的引用去猜。参考实现
+ * （Mailspring / Roundcube / SnappyMail / Gmail）全部都有会话视图，
+ * 这是本地工作台最明显的一处能力缺口。
+ *
+ * 后端 `/threads/{id}` 一直提供完整的消息序列（含 direction 判断收发），
+ * 只是从来没人调用。这里把它接上：默认折叠成一行「本线程 N 封」，
+ * 点开列出全部，点某一条跳到那一封。
+ * ===================================================================== */
+async function loadThreadStrip(el, m){
+  const host = el.querySelector("#threadstrip");
+  if(!host || !m.thread_id) return;
+  let r;
+  try{ r = await api("/threads/"+encodeURIComponent(m.thread_id)); }catch(e){ return; }
+  const msgs = ((r && r.data) || {}).messages || [];
+  if(msgs.length < 2) return;                    // 只有一封就不占地方
+  S.thread = {id:m.thread_id, messages:msgs};
+  host.innerHTML = `<div class="panel">
+    <div class="ph">🧵 本线程 ${msgs.length} 封
+      <span class="spacer"></span>
+      <button class="btn sm ghost" id="tglThread">展开 ▾</button></div>
+    <div class="pb hidden" id="threadBody"></div></div>`;
+  const body = el.querySelector("#threadBody");
+  const btn  = el.querySelector("#tglThread");
+  body.innerHTML = msgs.map((x,i)=>{
+    const out = x.direction === "out";
+    const cur = x.message_id === m.message_id;
+    const who = out ? "我" : (x.from_name || x.from_addr || "?");
+    return `<div class="trow ${cur?"cur":""}" data-tmid="${esc(x.message_id)}" data-ti="${i}"
+        title="${esc(x.subject||"")}">
+      <span class="tdir">${out? "↗" : "↘"}</span>
+      <span class="twho">${esc(who)}</span>
+      <span class="tsnip">${esc(x.snippet||"(无摘要)")}</span>
+      <span class="tdate">${esc(fmtTime(x.date_iso))}</span>
+    </div>`;
+  }).join("") + `<div class="mhint" style="padding:6px 2px 0">
+      点任一封可直接切过去；↘ 收到 / ↗ 我发出。</div>`;
+  if(btn) btn.onclick = ()=>{
+    const on = body.classList.toggle("hidden");
+    btn.textContent = on ? "展开 ▾" : "收起 ▴";
+  };
+  body.querySelectorAll("[data-tmid]").forEach(n=>n.onclick=()=>{
+    const i = +n.dataset.ti;
+    const x = msgs[i];
+    // 同线程的其它邮件可能不在当前列表里 —— 用线程消息对象直接打开详情，
+    // 不去动列表的选中态（列表是「工作视图」，详情是「这一封」）。
+    openDetail({message_id:x.message_id, thread_id:m.thread_id, subject:x.subject}, false);
+  });
 }
 
 function renderJobPanel(){
@@ -896,7 +1146,7 @@ function renderJobPanel(){
   const st=j.status;
   const meta = S.constants.draft_modes||["quick","normal","detailed","formal","academic"];
   const ctrls = S.constants.reply_controls||{};
-  let h = `<div class="panel"><div class="ph">
+  let h = `<div class="panel" data-job="${esc(j.job_id||"")}"><div class="ph">
       <span class="status ${esc(st)}">${esc(j.status_label||st)}</span>
       <span style="font-weight:400;color:var(--muted)">${esc(j.draft_mode||"normal")}</span>
       <span class="spacer"></span>
@@ -928,23 +1178,50 @@ function renderJobPanel(){
       <span style="color:var(--muted);margin-left:8px">提交后任务重回队列，WorkBuddy 会带着这些信息重新起草。</span></div></div>`;
   }
 
-  /* 已经发出去之后，草稿就只是**一条记录**，不再是待办的草稿。
-     用户反馈的困惑就在这儿：发送成功后页面原样不动，草稿框还能打字、
-     下面还摆着「快捷改写」—— 让人怀疑「这封到底发出去没有」。
-     所以 sent 之后：框只读、去掉「保存修改」、明确标出发送时间。 */
-  const sentDone = (st==="sent");
+  /* ---- 终态 / 失败：把草稿降级成「一条记录」，并给一个重启入口 ----
+     用户报的问题（附了他自己的截图）：一个状态已经是「已放弃」的任务，
+     面板上却照样摆着可编辑的正文框、「保存修改」、模板按钮、模式、快捷改写 ——
+     点下去后端一律拒绝，界面上看起来就是「毫无反应」。
+
+     根因：这里原来只判了 `st==="sent"` 一种终态，`dismissed` / `expired`
+     和 `failed` 都漏了，于是它们全都按「还能改」渲染。
+
+     现在改成：终态与失败一律**冻结**（只读 + 明确说明 + 一个「重新起草」），
+     并在说明里写清「接下来能做什么」。判据不再自己拼状态字符串 ——
+     后端 `j.can` 已经给了权威答案（`can_edit` / `can_revise` / `can_dismiss`），
+     前端按它渲染，两边就不会再各说各话。 */
+  const FROZEN_STATUS = ["sent", "dismissed", "expired", "failed"];
+  const frozen = FROZEN_STATUS.indexOf(st) >= 0;
+  const FROZEN_NOTE = {
+    sent: ["已发送", "这封已经发出去了，内容不能再改。草稿留在这里只作记录。"],
+    dismissed: ["已放弃", "这个草稿已经被放弃，不再是待办了。上面写的字还留着，可以复制走。"],
+    expired: ["已过期", "超过保留时间一直没人处理，任务自动过期。草稿内容仍然保留。"],
+    failed: ["起草失败", "Worker 报告了失败，没有可改的草稿。可以直接重新起一个任务。"],
+  };
+  if(frozen){
+    const nt = FROZEN_NOTE[st] || ["本任务已结束", "任务已结束，不能再编辑。"];
+    h += `<div class="miss"><h4>${esc(nt[0])}</h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.75">${esc(nt[1])}</div>
+      ${j.last_error? `<div style="margin-top:6px;color:var(--err);font-size:12px">最近错误：${esc(j.last_error)}</div>`:""}
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn primary sm" id="restartDraft">重新起草</button>
+        <span style="color:var(--muted);font-size:12px">
+          会新建一个任务（旧的这条记录保留在草稿流水线里，不会被覆盖）。</span>
+      </div></div>`;
+  }
+
   if(j.draft_text){
-    h += `<textarea class="draft" id="draftText"${sentDone?" readonly":""}>${esc(j.draft_text)}</textarea>`;
+    h += `<textarea class="draft" id="draftText"${frozen?" readonly":""}>${esc(j.draft_text)}</textarea>`;
     h += `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-      ${sentDone? "" : `<button class="btn sm" id="saveEdit">保存修改</button>`}
+      ${frozen? "" : `<button class="btn sm" id="saveEdit">保存修改</button>`}
       <button class="btn sm" id="copyDraft">复制正文</button>
       ${j.edit_ratio!=null? `<span style="color:var(--muted);align-self:center">编辑比例 ${(j.edit_ratio*100).toFixed(0)}%</span>`:""}
-      ${sentDone? `<span style="align-self:center;color:#2e7d32">✓ 已于 ${esc(fmtTime(j.sent_at))} 发出</span>`:""}
+      ${st==="sent"? `<span style="align-self:center;color:#2e7d32">✓ 已于 ${esc(fmtTime(j.sent_at))} 发出</span>`:""}
     </div>`;
     /* 快速草稿：给一排模板按钮，点一下换一篇。
        自动匹配难免选错（把「申请名额」认成「稍后答复」之类），
        所以「换」必须是一步就能做到的事，而不是让人自己重写。 */
-    if(j.trigger_source==="fast_template" && !sentDone){
+    if(j.trigger_source==="fast_template" && !frozen){
       const tpls = (S.constants&&S.constants.draft_templates)||[];
       if(tpls.length){
         h += `<div style="margin-top:10px">
@@ -957,18 +1234,43 @@ function renderJobPanel(){
     }
   } else {
     h += `<div style="color:var(--muted);font-size:12.5px;padding:6px 0">
-      草稿尚未生成（状态：${esc(st)}）。WorkBuddy 认领后会通过 Worker 契约回填。</div>`;
+      ${frozen? "这个任务没有留下草稿正文。" :
+        "草稿尚未生成（状态："+esc(st)+"）。WorkBuddy 认领后会通过 Worker 契约回填。"}</div>`;
   }
 
-  /* 已发出的草稿不再提供「换模式 / 快捷改写」——
-     那些操作会派生新任务，对一封已经寄出的信毫无意义，
-     留在界面上只会让人以为「还能改、是不是没发出去」。 */
-  if(!sentDone){
+  /* 已结束的草稿不再提供「换模式 / 快捷改写」——
+     那些操作会派生新任务，对一个已经结束的任务毫无意义，
+     留在界面上只会让人以为「还能改、是不是没生效」。 */
+  if(!frozen){
+    /* 模式与快捷改写：文案一律用后端给的**中文标签**。
+       之前渲染的是键本身（quick / shorter / strip_boilerplate），
+       那是给程序读的标识符 —— 用户看到的是一排英文暗号。
+       改写按钮再按「长度 / 语气 / 语言 / 其它」分组，因为用户找的是
+       「我想让它变成什么样」，而不是按字母序找一个词。 */
+    const mLab = MODE_LABEL(), rLab = RC_LABEL();
+    const rcGroup = S.constants.reply_control_group;
+    let rcHtml;
+    if(rcGroup && typeof rcGroup === "object" && Object.keys(rcGroup).length){
+      rcHtml = Object.keys(rcGroup).map(g => {
+        const keys = (rcGroup[g]||[]).filter(k => ctrls[k] !== undefined);
+        if(!keys.length) return "";
+        return `<div style="font-size:11.5px;color:var(--muted);margin:6px 0 4px">${esc(g)}</div>
+          <div class="ctrlrow">${keys.map(k =>
+            `<button class="btn sm" data-ctrl="${esc(k)}" title="${esc(ctrls[k]||"")}">${
+              esc(rLab[k]||k)}</button>`).join("")}</div>`;
+      }).join("");
+    }else{
+      rcHtml = `<div class="ctrlrow">${Object.keys(ctrls).map(k =>
+        `<button class="btn sm" data-ctrl="${esc(k)}" title="${esc(ctrls[k]||"")}">${
+          esc(rLab[k]||k)}</button>`).join("")}</div>`;
+    }
     h += `<div style="margin-top:12px">
     <div style="font-size:11.5px;color:var(--muted);margin-bottom:5px">模式（一键切换）</div>
-    <div class="ctrlrow">${meta.map(k=>`<button class="btn sm ${j.draft_mode===k?"primary":""}" data-mode="${k}">${esc(k)}</button>`).join("")}</div>
+    <div class="ctrlrow">${meta.map(k =>
+      `<button class="btn sm ${j.draft_mode===k?"primary":""}" data-mode="${esc(k)}"
+        title="${esc(mLab[k]||"")}">${esc(shortLabel(mLab[k])||k)}</button>`).join("")}</div>
     <div style="font-size:11.5px;color:var(--muted);margin-bottom:5px">快捷改写（不必自己写 prompt）</div>
-    <div class="ctrlrow">${Object.keys(ctrls).map(k=>`<button class="btn sm" data-ctrl="${k}">${esc(k)}</button>`).join("")}</div>
+    ${rcHtml}
   </div>`;
   }
 
@@ -993,6 +1295,27 @@ function renderJobPanel(){
   h += `</div></div>`;
   host.innerHTML = h;
 
+  /* 「重新起草」：终态 / 失败之后唯一的出路。
+     走的是 /draft-jobs（幂等创建）—— 终态任务不占幂等键，所以这里会**真的
+     建一个新任务**；而如果这封邮件已经有一个活跃任务，后端会把那个返回回来，
+     不会重复劳动。这条路径以前完全不存在，用户放弃草稿之后就只剩「干看着」。 */
+  const rd = $("restartDraft");
+  if(rd) rd.onclick = async ()=>{
+    rd.disabled = true; rd.textContent = "正在建新任务…";
+    try{
+      const r = await api("/draft-jobs",{method:"POST",body:{message_id:j.message_id}});
+      if(!r.ok){ toast("重新起草失败："+(r.error||"未知错误"),"err"); return; }
+      const nj = (r.data||{}).job||{};
+      toast("已新建任务（"+(nj.status_label||nj.status||"排队中")+"）—— 等 Worker 认领后出稿"
+            + (nj.job_id===j.job_id ? "；这封其实已有一个活跃任务，直接用它" : ""), "ok");
+      await refreshAll();
+      await refreshDetail();
+    }catch(e){
+      toast("重新起草异常："+e,"err");
+    }finally{
+      rd.disabled = false; rd.textContent = "重新起草";
+    }
+  };
   const si=$("submitInput");
   if(si) si.onclick=()=>{
     const answers={};
@@ -1002,11 +1325,18 @@ function renderJobPanel(){
       .then(r=>{ if(r.ok){ toast("已提交，任务重新入队","ok"); refreshDetail(); } else toast(r.error,"err"); });
   };
   host.querySelectorAll("[data-tpl]").forEach(b=>b.onclick=()=>{
+    const label = b.textContent.trim();
+    b.disabled = true;
     api("/drafts/fast",{method:"POST",body:{message_id:j.message_id, kind:b.dataset.tpl}})
       .then(r=>{
-        if(r.ok){ toast("已换成「"+((r.template||{}).label||"")+"」模板","ok"); refreshDetail(); }
-        else toast(r.error,"err");
-      });
+        // 信封返回：template 在 data 下（原来读 r.template，永远拿到 undefined，
+        // 于是提示永远是「已换成「」模板」）
+        if(!r.ok){ toast("换模板失败："+(r.error||"未知错误"),"err"); return; }
+        toast("已换成「"+(((r.data||{}).template||{}).label||label)+"」模板","ok");
+        refreshAll(); refreshDetail();
+      })
+      .catch(e=>toast("换模板异常："+e,"err"))
+      .finally(()=>{ b.disabled = false; });
   });
   const se=$("saveEdit");
   if(se) se.onclick=()=>{
@@ -1016,18 +1346,32 @@ function renderJobPanel(){
   const cd=$("copyDraft");
   if(cd) cd.onclick=()=>{ navigator.clipboard.writeText($("draftText").value).then(()=>toast("已复制正文","ok")); };
   host.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{
+    /* 切模式本身不改正文 —— 服务端只更新 draft_mode，要等「重新生成」才按新模式重写。
+       所以提示语必须说清这一点，否则用户切完看不到任何变化，会以为没生效。 */
     api("/drafts/"+j.job_id+"/mode",{method:"POST",body:{draft_mode:b.dataset.mode}})
-      .then(r=>{ if(r.ok) refreshDetail(); });
+      .then(r=>{
+        if(!r.ok){ toast("切换模式失败："+(r.error||"未知错误"),"err"); return; }
+        toast("已切到「"+(MODE_LABEL()[b.dataset.mode]||b.dataset.mode)+"」—— "
+              +"点「换一版」会按这个模式重写","ok");
+        refreshDetail();
+      })
+      .catch(e=>toast("切换模式异常："+e,"err"));
   });
   host.querySelectorAll("[data-ctrl]").forEach(b=>b.onclick=()=>{
     const c=b.dataset.ctrl;
-    if(c==="regenerate"){
-      api("/drafts/"+j.job_id+"/revise",{method:"POST",body:{control:c}})
-        .then(r=>{ if(r.ok){ toast("已重新排队生成新版","ok"); refreshDetail(); } else toast(r.error,"err"); });
-      return;
-    }
+    const label = RC_LABEL()[c] || c;
+    /* 这里原来只在成功时刷新、失败时也刷新但**没有 else 分支的地方不止一处**；
+       实测表现是「点了没反应」—— 因为失败时既不提示也不改界面。
+       统一成：成功有说法、失败有原因、异常也有兜底。 */
     api("/drafts/"+j.job_id+"/revise",{method:"POST",body:{control:c}})
-      .then(r=>{ if(r.ok){ toast("已派生新版任务（"+c+"）","ok"); refreshDetail(); } else toast(r.error,"err"); });
+      .then(r=>{
+        if(!r.ok){ toast("「"+label+"」失败："+(r.error||"未知错误"),"err"); return; }
+        toast(c==="regenerate"
+              ? "已重新排队，生成新一版"
+              : "已派生新版任务（「"+label+"」）；旧草稿留作历史，不会丢","ok");
+        refreshDetail();
+      })
+      .catch(e=>toast("「"+label+"」异常："+e,"err"));
   });
   const ab=$("approveBtn");
   if(ab) ab.onclick=()=>{
@@ -1060,11 +1404,40 @@ function renderJobPanel(){
     });
   };
   const rb=$("revokeBtn");
-  if(rb) rb.onclick=()=>{ api("/drafts/"+j.job_id+"/revoke",{method:"POST",body:{}})
-    .then(()=>{S.approveToken=null; toast("已撤回确认","warn"); refreshDetail();}); };
+  if(rb) rb.onclick=()=>{
+    /* 原来这里不看 r.ok 就报「已撤回确认」—— 撤回失败时会给出**假成功**，
+       用户以为撤回了、其实还停在「已确认待发送」，非常危险（下一封可能误发）。
+       凡是「改状态」的动作，一律先看 ok 再报结果。 */
+    api("/drafts/"+j.job_id+"/revoke",{method:"POST",body:{}})
+      .then(r=>{
+        if(!r.ok){ toast("撤回失败："+(r.error||"未知错误"),"err"); return; }
+        S.approveToken=null;
+        toast("已撤回确认 —— 回到「审核中」，令牌作废","warn");
+        refreshAll(); refreshDetail();
+      })
+      .catch(e=>toast("撤回异常："+e,"err"));
+  };
   const db=$("dismissBtn");
-  if(db) db.onclick=()=>{ api("/drafts/"+j.job_id+"/dismiss",{method:"POST",body:{}})
-    .then(()=>{ toast("已放弃草稿","warn"); refreshDetail(); refreshAll(); }); };
+  if(db) db.onclick=()=>{
+    if(!confirm("放弃这个草稿？\n\n草稿内容会留作记录（不会删），但这封邮件不再是待办了。\n"
+                +"之后想再起草，可以在同一位置点「重新起草」。")) return;
+    db.disabled = true; db.textContent = "正在放弃…";
+    /* 同样不能不看 r.ok：dismiss 在「已确认待发送」状态下会被状态机拒绝
+       （必须先撤回确认），那时报「已放弃」就是假成功。 */
+    api("/drafts/"+j.job_id+"/dismiss",{method:"POST",body:{}})
+      .then(r=>{
+        if(!r.ok){
+          toast("放弃失败："+(r.error||"未知错误")
+                + (/revoke|撤回|approved/i.test(r.error||"") ? "（先点「撤回确认」）" : ""),
+                "err");
+          return;
+        }
+        toast("已放弃草稿 —— 内容保留，可随时「重新起草」","warn");
+        refreshAll(); refreshDetail();
+      })
+      .catch(e=>toast("放弃异常："+e,"err"))
+      .finally(()=>{ db.disabled = false; db.textContent = "放弃草稿"; });
+  };
 }
 /* 发送之后自动移到下一封。
    用户的反馈原话：「点击真正发送后，还停在这个页面」——
@@ -1090,19 +1463,73 @@ async function refreshDetail(){
 /* ===================================================================== */
 /* 动作                                                                  */
 /* ===================================================================== */
-const SNOOZE_PRESETS = [["later_today","今天稍后"],["tomorrow","明天"],["next_week","下周"],["+3d","3 天后"]];
+const SNOOZE_PRESETS = [["later_today","今天稍后"],["tomorrow","明天"],
+  ["next_week","下周"],["+3d","3 天后"],["+2w","2 周后"],["+1m","1 个月后"]];
+
+/* 延后：给一排预设 + 一个自定义时间，而不是 window.prompt()。
+   原来用 prompt 弹一个「later_today / tomorrow / next_week / +3d / 2026-09-25」
+   的输入框 —— 用户得先知道我们的内部暗号才能用。预设按钮点一下就好，
+   自定义留 datetime-local，两边都覆盖。 */
+function openSnoozeDialog(m, done){
+  const root = $("modalRoot"); if(!root) return;
+  const subj = String((m && m.subject) || "(无主题)").slice(0, 42);
+  root.innerHTML = `<div class="modal" id="snoozeModal">
+    <div class="mbox" style="width:min(440px,92vw)">
+      <div class="mhead">⏰ 延后<span class="spacer"></span>
+        <button class="btn sm ghost" data-m="cancel">关闭</button></div>
+      <div class="mbody">
+        <div class="mhint" style="margin-bottom:2px">${esc(subj)}</div>
+        <div class="ctrlrow">${SNOOZE_PRESETS.map(([v,t])=>
+          `<button class="btn sm" data-when="${esc(v)}">${esc(t)}</button>`).join("")}</div>
+        <div class="field"><label>或者指定一个时间</label>
+          <input type="datetime-local" id="snzAt"></div>
+        <div class="mhint">到点后线程自动回到「待我处理」。延后由本地调度器负责，
+          不用任何外部定时任务。</div>
+      </div>
+      <div class="mfoot"><span class="spacer"></span>
+        <button class="btn ghost" data-m="cancel">取消</button>
+        <button class="btn primary" id="snzOk" disabled>确定延后</button></div>
+    </div></div>`;
+  const fire = (when)=>{
+    if(!when) return;
+    root.innerHTML = "";
+    done(when);
+  };
+  root.querySelectorAll("[data-m=cancel]").forEach(b=>b.onclick=()=>{ root.innerHTML=""; });
+  root.querySelectorAll("[data-when]").forEach(b=>b.onclick=()=>fire(b.dataset.when));
+  const at = $("snzAt"), okBtn = $("snzOk");
+  if(at) at.oninput = ()=>{ if(okBtn) okBtn.disabled = !at.value; };
+  if(okBtn) okBtn.onclick = ()=>{ if(at && at.value) fire(at.value); };
+}
+
+/* 通用：把 modalRoot 清空（写邮件 / 延后 / 帮助 三类弹窗共用同一个容器） */
+function closeModal(){ const r=$("modalRoot"); if(r) r.innerHTML=""; }
+
 async function doAction(a, m){
   const mid = m.message_id;
+  /* ⚠️「返回形状」是这个界面最容易踩的坑，这里集中说明一次（已实测确认）：
+       · `/actions`            → **扁平**返回 {ok, action, message, undo_id,
+                                 snooze, mailto, hint, …}
+       · `/drafts/fast`        → 统一信封 {ok, data:{job, template, …}}
+       · 其余 `/api/*` 写接口  → 统一信封
+     下面几处原来一律写 `r.data.xxx` / `r.template`，取不到就抛 TypeError。
+     表现是「点了按钮什么都没发生」：toast 不弹、`afterAction()` 也不执行，
+     列表纹丝不动 —— 用户只会得出「这按钮坏了」。
+     证据：verification/_audit_contract.py 会把真实形状打出来。 */
   if(a==="snooze"){
-    const when = prompt("延后到？（later_today / tomorrow / next_week / +3d / 2026-09-25）","tomorrow");
-    if(!when) return;
-    const r = await api("/actions",{method:"POST",body:{action:"snooze",message_id:mid,when:when}});
-    toast(r.ok? ("已延后到 "+(r.data.snooze.wake_at||when)) : r.error, r.ok?"ok":"err");
-    return afterAction(mid);
+    openSnoozeDialog(m, async (when)=>{
+      const r = await api("/actions",{method:"POST",body:{action:"snooze",message_id:mid,when:when}});
+      // 扁平返回：wake_at 在 r.snooze 下，不是 r.data.snooze
+      toast(r.ok? ("已延后到 "+(((r.snooze||{}).wake_at)||when)) : (r.error||"延后失败"),
+            r.ok?"ok":"err");
+      if(r.ok) await afterAction(mid);
+    });
+    return;
   }
   if(a==="open_external"){
     const r = await api("/actions",{method:"POST",body:{action:"open_external",message_id:mid}});
-    toast(r.ok? (r.data.hint||"已生成外部入口") : r.error, r.ok?"":"err");
+    // 扁平返回：hint 在顶层（这个动作**没有** message 字段，所以兜底也不能读 message）
+    toast(r.ok? (r.hint||"已生成外部入口") : (r.error||"打开失败"), r.ok?"":"err");
     return;
   }
   if(a==="reply_fast"){
@@ -1111,7 +1538,8 @@ async function doAction(a, m){
        让它们去排 AI 队列要等几十秒到不确定，模板直接给。 */
     const r = await api("/drafts/fast",{method:"POST",body:{message_id:mid}});
     if(r.ok){
-      const t = r.template||{};
+      // 信封返回：template 在 r.data 下
+      const t = (r.data||{}).template || {};
       const miss = (t.missing_slots||[]).length;
       toast("已用「"+(t.label||"模板")+"」生成草稿"
             + (t.auto? "（自动匹配，可换）" : "")
@@ -1132,30 +1560,174 @@ async function doAction(a, m){
   }
   if(a==="reply_manual"){
     const r = await api("/actions",{method:"POST",body:{action:"reply_manual",message_id:mid}});
-    if(r.ok && r.data.mailto) window.open(r.data.mailto);
+    // 扁平返回：mailto 在顶层
+    if(r.ok && r.mailto) window.open(r.mailto);
+    else toast(r.error || "生成人工回复入口失败","err");
     return;
   }
-  const r = await api("/actions",{method:"POST",body:{action:a,message_id:mid}});
-  toast(r.ok? (r.message||"完成") : (r.error||"失败"), r.ok?"ok":"err");
-  afterAction(mid);
+  /* ---- 通用动作分支（归档 / 等对方 / 完成 / 忽略 / 星标 / 未读 / 删除）----
+     三处以前都不稳：
+       ① `afterAction(mid)` 没有 await、也没有 catch —— 它内部要发两条请求，
+          异常会变成「未处理的 Promise 拒绝」，用户看到的就是静默失败；
+       ② 失败时照样 `afterAction()` —— 那会把界面刷成「看起来已经处理过了」，
+          而服务器其实没动（最容易误导人的一种表现）；
+       ③ 报错只有后端原文，没有兜底文案。 */
+  let r;
+  try{
+    r = await api("/actions",{method:"POST",body:{action:a,message_id:mid}});
+  }catch(e){
+    toast("操作失败（网络或服务异常）："+e,"err");
+    return;
+  }
+  if(!r.ok){
+    toast(r.error || "操作失败","err");
+    /* Foxmail 历史记录的报错话术偏技术（「没有服务器 UID」），
+       补一句人话 —— 这类邮件只能看、不能改标记，不是坏了。
+       （正常情况下这四个按钮在历史记录上已被预先禁用，这里是兜底。） */
+    if(/没有服务器 UID|Foxmail/i.test(r.error||"")){
+      toast("这封是 Foxmail 历史记录（服务器上没有它），只能看，不能改标记","warn",6000);
+    }
+    return;                       // 失败不刷新 —— 保持界面与服务器一致
+  }
+  toast(r.message || "完成","ok");
+  try{
+    await afterAction(mid);
+  }catch(e){
+    toast("界面刷新失败（操作已生效）："+e,"warn");
+    refreshAll();                 // 兜底：退回到整体刷新
+  }
 }
+/* ===================================================================== */
+/* 局部操作 → 全局状态 的一致性收尾                                        */
+/*                                                                       */
+/* 用户的原始反馈：「点击『完成』等按钮后，左侧 Inbox 等导航栏的未读/数量  */
+/* 计数应自动同步更新」「中部邮件删除或标记已读后的颜色/状态变化」。       */
+/*                                                                       */
+/* 根因：这里以前**只**刷新了工作桶，于是：                                */
+/*   · 左侧文件夹的未读/总数（S.folders）没人拉 → 数字纹丝不动 ▸ 看起来     */
+/*     「点了完成没生效」，用户只能手动按 g 刷新才发现其实成功了            */
+/*   · 文件夹/标签视图的列表项没人更新 → 行上的未读小蓝点一直亮着；         */
+/*     删掉的邮件还赖在列表里（服务端其实已经过滤掉它了）                  */
+/*   · 选中集合里留着已经离开列表的 id → 「一行都没勾，批量条却写着已选 3 封」*/
+/*                                                                       */
+/* 一个动作改的是**一封邮件**，但它牵动四处状态。所以这里一次性对齐，       */
+/* 而不是各修各的（分散修就会漏，之前就是漏出来的）。                      */
 async function afterAction(mid){
-  await loadBuckets();
+  /* 两条请求并行拿：工作桶（线程级计数 + 沉底/仅知会 + 草稿流水线）
+     与文件夹（未读/总数）。都很便宜（实测工作桶 ~40ms、文件夹 ~5ms），
+     比让用户对着旧数字猜强得多。 */
+  const [b, f] = await Promise.all([api("/buckets?limit=500"), api("/folders")]);
+  if(b.ok){
+    S.buckets=b.data.buckets||{}; S.bucketCounts=b.data.counts||{};
+    S.pipeline=b.data.pipeline||{}; S.workingset=b.data.workingset||{};
+  }
+  if(f.ok){
+    S.folders=f.data.folders||[]; S.indexCount=f.data.index_count||0;
+    S.totalMessages=f.data.total_messages||0;
+  }
+
   const keep = S.items.findIndex(x=>x.message_id===mid);
-  // 只有工作桶视图会「因为动作而少一条」（归档/完成后就离开这个桶了）。
-  // 文件夹/标签视图是档案视角：标了已读、归档了，邮件**仍在这个文件夹里**，
-  // 把它从列表里抽掉反而会让人以为邮件没了。
-  if(S.scope.type==="bucket") S.items = scopeItems();
+  if(S.scope.type==="bucket"){
+    // 工作桶是「线程级」：归档/完成后线程就离开这个桶了，直接用新数据重建。
+    S.items = S.buckets[S.scope.id]||[];
+  }else{
+    /* 档案视图（文件夹/标签）是「邮件级」：标已读、归档之后邮件**仍在这个
+       文件夹里**，把它整封抽掉反而会让人以为邮件没了（这是刻意的设计）。
+       所以不整批重拉（那会冲掉滚动位置和选择），只把**这一封**的最新状态
+       就地补上：已读/未读、删除、分类、工作流状态。 */
+    await patchFolderItem(mid);
+  }
+
+  pruneSelection();
+  renderSide();
   renderList();
+
   const i = S.items.findIndex(x=>x.message_id===mid);
-  if(i>=0) select(i,false); else { S.cur=-1; S.curItem=null; }
-  if(S.items.length && i<0) select(Math.min(keep<0?0:keep, S.items.length-1), false);
+  if(i>=0){ select(i,false); await syncUndoBar(); return; }
+  // 这一封已经离开当前列表：把光标挪到原位置的下一封，让「处理完一封」有推进感
+  S.cur=-1; S.curItem=null;
+  if(S.items.length) select(Math.min(Math.max(keep,0), S.items.length-1), false);
+  else renderEmptyDetail();
+  /* 最后一步才刷撤销条：它自己会 renderList 一次，放在选择之后可以避免
+     「撤销条闪一下就没了」。撤销条是本轮新增的**可见后悔药** ——
+     以前只有 `u` 快捷键，没人知道。 */
+  await syncUndoBar();
+}
+
+/* 用 `#detail` 的空态替换当前详情（列表空了之后必须做，否则右栏会一直
+   挂着已经不在列表里的那封邮件，看起来像「删了还在这儿」）。 */
+function renderEmptyDetail(){
+  const d = $("detail");
+  if(d) d.innerHTML = `<div class="empty"><b>当前视图里没有邮件了</b>
+    <div style="margin-top:6px;font-size:12px">左侧换个工作桶 / 文件夹继续，
+    或者按 <kbd>g</kbd> 刷新。</div></div>`;
+}
+
+/* 从后端取**这一封**的最新状态，就地更新（或移出）列表里对应的那一行。
+   为什么不整批重拉：重拉会冲掉滚动位置与当前选择，而这里只需要改一行。 */
+async function patchFolderItem(mid){
+  if(!S.folderItems || !S.folderItems.length) return;
+  const idx = S.folderItems.findIndex(x=>x.message_id===mid);
+  if(idx<0) return;
+  let m = null;
+  try{
+    const r = await api("/messages/"+encodeURIComponent(mid));
+    if(r.ok) m = r.data;
+  }catch(_){ /* 取不到就保持原样 —— 下一次刷新会把它纠正过来，不猜 */ }
+  if(!m) return;
+  /* 「还该不该留在这个列表里」要和**服务端同一条规则**：
+       已删除的邮件 / 「仅未读」筛选下不再是未读的邮件，服务端的
+       /messages 都不会返回它们 —— 列表里留着就成了幽灵行。 */
+  const stay = !m.deleted && !(S.onlyUnread && !m.unread);
+  if(!stay){
+    S.folderItems.splice(idx,1);
+    S.items = S.folderItems;
+    return;
+  }
+  S.folderItems[idx] = Object.assign({}, S.folderItems[idx], {
+    unread: !!m.unread, flagged: !!m.flagged, deleted: !!m.deleted,
+    classification: m.classification, workflow_state: m.workflow_state,
+    has_attachments: !!m.has_attachments, broadcast: !!m.broadcast,
+  });
+  S.items = S.folderItems;
+}
+
+/* 选中集合里可能留着已经离开列表的邮件 id。
+   不清理的后果：界面上一行都没打勾，批量条却写着「已选 3 封」，
+   点下去还会对已经不在这批列表里的邮件动手。 */
+function pruneSelection(){
+  if(!S.selected || !S.selected.size) return;
+  const live = new Set((S.items||[]).map(x=>x.message_id));
+  for(const id of Array.from(S.selected)) if(!live.has(id)) S.selected.delete(id);
+}
+
+/* 撤销条的基线：只在**新操作发生之后**才显示撤销条。
+   不设基线的话，一进页面就会挂着一条几小时前的 undo 记录 —— 那不是「后悔药」，
+   是噪音（而且点下去会撤掉一个用户早就忘了的操作，比不提供更糟）。 */
+let undoSeen = 0;
+async function syncUndoBar(){
+  let row = null;
+  try{
+    const r = await api("/undo/last");
+    if(r.ok) row = r.data;
+  }catch(_){ /* 拿不到就不显示撤销条，不影响主流程 */ }
+  const id = row && row.id ? row.id : 0;
+  S.undo = (id && id !== undoSeen) ? row : null;
+  undoSeen = id;
+  renderList();
+}
+/* 首次进入时把基线对齐到「当前最后一条」，避免旧记录被当成新鲜动作。 */
+async function primeUndoBaseline(){
+  try{
+    const r = await api("/undo/last");
+    if(r.ok && r.data && r.data.id) undoSeen = r.data.id;
+  }catch(_){}
 }
 async function batchApply(action){
   if(S.batchBusy) return;                       // 防连点：一次只允许一批在跑
   const ids=[...S.selected];
   if(!ids.length){ toast("先按 x 选中邮件","warn"); return; }
-  const label = BATCH_TEXT[action] || action;
+  const label = batchLabel(action);
   S.batchBusy = true;
   // **立刻**给反馈，别等服务器。
   // 这批可能上百封，服务端要逐类下发服务器标志；先不说话，
@@ -1181,6 +1753,14 @@ async function batchApply(action){
                 "warn");
         }
       }
+      /* 「标为未读」的反向解释，同一个道理：这批本来就都是未读的，
+         数字不会动，不说清楚就成了「按钮坏了」。 */
+      if(action==="unread"){
+        const n = (S.items||[]).filter(x => ids.indexOf(x.message_id)>=0 && !x.unread).length;
+        if(n === 0){
+          toast("这 "+ids.length+" 封本来就都是未读的，数字不会变","warn");
+        }
+      }
     }else{
       toast(`${label}失败：${r.error || "未知错误"}`,"err");
     }
@@ -1191,6 +1771,8 @@ async function batchApply(action){
     S.selected.clear();
     // 无论成功失败都要刷新：失败时也可能已经改了一部分（部分成功）
     try{ await refreshAll(); }catch(e){ /* 刷新失败也不能把用户困在旧列表上 */ }
+    // 批量操作的「撤销」入口 —— 145 封误删没有出口是不可接受的
+    try{ await syncUndoBar(); }catch(e){}
   }
 }
 async function undoLast(){
@@ -1215,6 +1797,8 @@ async function undoLast(){
   }finally{
     S.batchBusy = false;
     try{ await refreshAll(); }catch(e){ /* 刷新失败也不把用户困在原地 */ }
+    // 撤销之后，下一条（更早的）操作还可以继续撤 —— 一起对齐撤销条
+    try{ await syncUndoBar(); }catch(e){}
   }
 }
 
@@ -1223,22 +1807,28 @@ async function undoLast(){
 /* ===================================================================== */
 async function doSearch(){
   const q = $("q").value.trim();
-  if(!q){ S.view="list"; S.searchMode=false; await refreshAll(); return; }
+  if(!q){ await exitSearch(); return; }
   const r = await api("/search?limit=200&q="+encodeURIComponent(q));
   if(!r.ok){ toast("搜索失败："+r.error,"err"); return; }
   S.view="list"; S.searchMode=true; S.lastQuery=q;
+  S.searchExplain = (r.data||{}).explain || "";
   S.items = (r.data.messages||[]).map(m=>({
     message_id:m.message_id, thread_id:m.thread_id, subject:m.subject,
     from_name:m.from_name, from_addr:m.from_addr, date_iso:m.date_iso,
     snippet:m.snippet, classification:m.classification, workflow_state:m.workflow_state,
     message_count:1, unread:!!m.unread, has_attachments:!!m.has_attachments,
   }));
-  S.cur=-1;
-  $("listhead").innerHTML = `<b>搜索</b> · ${S.items.length} 条 · <span style="color:var(--muted)">${esc(r.data.explain||"")}</span>
-    <span class="spacer"></span><button class="btn sm ghost" id="exitSearch">退出搜索</button>`;
-  const e=$("exitSearch"); if(e) e.onclick=()=>{ $("q").value=""; S.searchMode=false; refreshAll(); };
-  renderList();
+  S.cur=-1; S.selected.clear();
+  const l=$("list"); if(l) l.scrollTop = 0;
+  renderList();          // 表头（含条数 / 命中说明 / 退出搜索）统一由 renderList 渲染
   if(S.items.length) select(0,false);
+}
+/* 退出搜索：清空输入框，回到当前 scope 的正常列表。
+   放在函数里而不是只绑在按钮上 —— Esc 和输入框清空两条路都要用它。 */
+async function exitSearch(){
+  const q=$("q"); if(q) q.value="";
+  S.searchMode=false; S.lastQuery=""; S.searchExplain=""; S.selected.clear();
+  await refreshAll();
 }
 async function showBrief(){
   S.view="brief";
@@ -1319,9 +1909,77 @@ function connectSSE(){
     es.addEventListener("snooze_wake_batch", ()=>{ toast("有邮件到了延后唤醒时间","warn"); refreshAll(); });
     es.addEventListener("followup", (e)=>{ try{ toast("跟进提醒："+(JSON.parse(e.data).note||""),"warn"); }catch(_){} refreshAll(); });
     es.addEventListener("recovery", ()=>refreshAll());
+    /* 单封 / 批量动作也会经事件总线广播。**只刷新两侧计数，不动当前列表** ——
+       这正是用户提的那条诉求（「操作后左侧计数要自动同步」），
+       同时也覆盖了「另一个窗口/标签页做了操作」的情况。
+       为什么不直接 refreshAll()：那会 loadScope → select(0)，把用户正在看的
+       那封邮件换掉，是比数字不更新更糟的打断。 */
+    es.addEventListener("action", ()=>{ loadBuckets(); loadFolders(); });
+    es.addEventListener("batch", ()=>{ loadBuckets(); loadFolders(); });
     es.addEventListener("idle_state", ()=>loadHealth());
     es.onerror = ()=>{};
   }catch(e){}
+}
+
+/* ===================================================================== */
+/* 帮助：快捷键 / 搜索语法                                                */
+/*                                                                       */
+/* 底部那条 kbd 提示只够放 13 个键，而且挤在一行里看不清。参考实现        */
+/* （Gmail 的 `?`、Spark 的命令栏、Aerion 的快捷键页）都是一键出全表。    */
+/* 搜索语法更是一直躺在后端常量（/constants → search_help）里没人展示 ——  */
+/* 用户只能从输入框的 placeholder 里猜。两样都补上。                     */
+/* ===================================================================== */
+const KEY_HELP = [
+  ["j / k  ·  ↓ / ↑", "下一封 / 上一封"],
+  ["Enter", "打开当前邮件（正文全文）"],
+  ["r", "AI 起草 —— 排进草稿队列，等 Worker 认领"],
+  ["a", "归档"],
+  ["s", "延后（弹出预设面板）"],
+  ["d", "完成 —— 移出「待我处理」"],
+  ["w", "等对方回复"],
+  ["e", "外部客户端入口（不改邮箱状态）"],
+  ["x", "选中 / 取消选中当前行"],
+  ["u", "撤销上一步（整批操作也一起撤）"],
+  ["c", "写邮件"],
+  ["g", "刷新（工作桶 + 文件夹 + 列表）"],
+  ["b", "今日简报"],
+  ["/", "聚焦搜索框"],
+  ["?", "本帮助"],
+  ["Esc", "关弹窗 / 退出输入框"],
+];
+function openHelpModal(kind){
+  const root = $("modalRoot"); if(!root) return;
+  if(kind === "search"){
+    const txt = (S.constants && S.constants.search_help) || "（搜索语法说明未加载）";
+    root.innerHTML = `<div class="modal" id="helpModal"><div class="mbox">
+      <div class="mhead">⌕ 搜索语法<span class="spacer"></span>
+        <button class="btn sm ghost" data-m="cancel">关闭</button></div>
+      <div class="mbody">
+        <div class="helpbox">${esc(txt)}</div>
+        <div class="mhint">多个操作符可以叠加，例如
+          <code>sender:sjtu after:30d has:attachment</code>；裸词之间是 AND 关系。</div>
+      </div>
+      <div class="mfoot"><span class="spacer"></span>
+        <button class="btn ghost" data-m="cancel">关闭</button>
+        <button class="btn primary" id="focusQ">去搜索</button></div>
+    </div></div>`;
+    const fq = $("focusQ");
+    if(fq) fq.onclick = ()=>{ closeModal(); const q=$("q"); if(q) q.focus(); };
+  }else{
+    root.innerHTML = `<div class="modal" id="helpModal"><div class="mbox">
+      <div class="mhead">⌨ 快捷键<span class="spacer"></span>
+        <button class="btn sm ghost" data-m="cancel">关闭</button></div>
+      <div class="mbody">${KEY_HELP.map(([k,v])=>
+        `<div class="keyrow"><span class="kk">${esc(k)}</span><span>${esc(v)}</span></div>`).join("")}</div>
+      <div class="mfoot"><span class="mhint">目标：一封邮件最多 1~2 次操作即可退出收件箱。</span>
+        <span class="spacer"></span>
+        <button class="btn ghost" data-m="cancel">关闭</button>
+        <button class="btn" id="helpSearch">搜索语法 →</button></div>
+    </div></div>`;
+    const hs = $("helpSearch");
+    if(hs) hs.onclick = ()=>openHelpModal("search");
+  }
+  root.querySelectorAll("[data-m=cancel]").forEach(b=>b.onclick=()=>closeModal());
 }
 
 /* ===================================================================== */
@@ -1333,7 +1991,11 @@ document.addEventListener("keydown", (e)=>{
   // Escape：先关弹窗，再退输入框 —— 开着弹窗时按 Esc 应该关弹窗
   if(e.key==="Escape"){
     if($("composeModal")){ closeCompose(); return; }
+    const mr = $("modalRoot");
+    if(mr && String(mr.innerHTML||"").trim()){ closeModal(); return; }
     if(isTyping()){ document.activeElement.blur(); return; }
+    // 在搜索态按 Esc 直接退出搜索（第二下；第一下先把焦点从输入框里拿出来）
+    if(S.searchMode){ exitSearch(); return; }
   }
   if(isTyping()) return;
   const nav = (d)=>{ if(!S.items.length) return; let i=S.cur+d; i=Math.max(0,Math.min(S.items.length-1,i)); select(i,false);
@@ -1353,6 +2015,7 @@ document.addEventListener("keydown", (e)=>{
     case "g": refreshAll(); break;
     case "b": showBrief(); break;
     case "c": if(!$("composeModal")) openCompose(); break;
+    case "?": openHelpModal("keys"); break;
     default: break;
   }
 });
@@ -1364,6 +2027,8 @@ $("q").addEventListener("keydown", (e)=>{ if(e.key==="Enter") doSearch(); });
 $("syncBtn").onclick = doSync;
 $("briefBtn").onclick = showBrief;
 $("healthBtn").onclick = showHealth;
+const shBtn = $("searchHelp");
+if(shBtn) shBtn.onclick = ()=>openHelpModal("search");
 /* 「回到顶部」：滚动容器是 #list，它在整个生命周期里是同一个元素
    （只换 innerHTML），所以这里绑一次就够，不必像 V1 那样用捕获阶段代理。 */
 $("toTop").onclick = ()=>{
@@ -1384,6 +2049,9 @@ $("list").addEventListener("scroll", syncToTop, { passive: true });
   await loadBuckets();
   await loadFolders();
   await loadScope();
+  /* 把撤销条的基线对齐到「当前最后一条 undo」——
+     否则一进页面就会挂出一条几小时前的旧记录（那不是后悔药，是噪音）。 */
+  await primeUndoBaseline();
   connectSSE();
   setInterval(loadHealth, 60000);
   // 定时刷新：工作桶 + 文件夹计数（文件夹未读数会随别处操作变化）
@@ -1405,8 +2073,23 @@ $("list").addEventListener("scroll", syncToTop, { passive: true });
     toggleSelectAll: () => toggleSelectAll(),
     clickTop: () => { const b=$("toTop"); if(b) b.click(); },
     scrollList: (y) => { const l=$("list"); if(l) l.scrollTop = y; syncToTop(); },
+    /* 新增功能的钩子：帮助浮层 / 线程条 / 批量按钮清单。
+       都是**只读或等价于点一下**，不改行为。 */
+    helpModal: (k) => openHelpModal(k || "keys"),
+    closeModal: () => closeModal(),
+    openSnooze: (i) => { const it=S.items[i==null?S.cur:i]; if(it) doAction("snooze", it); },
+    batchButtons: () => batchBtnList().map(a=>({action:a, label:batchLabel(a)})),
+    thread: () => S.thread || null,
+    exitSearch: () => exitSearch(),
+    refreshAll: () => refreshAll(),
+    afterAction: (mid) => afterAction(mid),
+    pruneSelection: () => pruneSelection(),
+    syncUndoBar: () => syncUndoBar(),
+    undoLast: () => undoLast(),
     state: () => ({
       scope: S.scope, view: S.view, items: S.items.length,
+      searchMode: !!S.searchMode, lastQuery: S.lastQuery || "",
+      searchExplain: S.searchExplain || "",
       // 未读相关：自检脚本要能断言「仅未读」筛选确实只留下了未读邮件
       onlyUnread: !!S.onlyUnread,
       unreadInItems: S.items.filter(x=>x.unread).length,
@@ -1414,6 +2097,22 @@ $("list").addEventListener("scroll", syncToTop, { passive: true });
         unread:f.unread, custom:!!f.custom})),
       indexCount: S.indexCount,
       selected: S.selected.size,
+      /* 选中集合的**内容**（不只是个数）—— 一致性审计要靠它发现
+         「选中集合里留着已经离开列表的 id」这种幽灵状态。 */
+      selectedIds: Array.from(S.selected),
+      listIds: S.items.map(x=>x.message_id),
+      // 详情与当前项：判断「局部操作有没有把详情一起刷新」
+      curItem: S.curItem ? {message_id:S.curItem.message_id} : null,
+      detail: S.detail ? {
+        message_id:S.detail.message_id, unread:S.detail.unread,
+        flagged:S.detail.flagged, deleted:S.detail.deleted,
+        workflow_state:S.detail.workflow_state,
+      } : null,
+      bucketCounts: S.bucketCounts || {},
+      /* 撤销条：一致性审计要断言「操作后出现了可见的撤销入口」 */
+      undoBar: !!(S.undo && S.undo.id),
+      undoAction: S.undo ? (S.undo.action || '') : '',
+      undoBtnShown: !!document.querySelector('#undoBtn'),
       allSelected: S.items.length>0 &&
         S.items.every(x=>S.selected.has(x.message_id)),
       toTopShown: !!($("toTop")||{}).classList &&

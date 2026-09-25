@@ -1956,6 +1956,15 @@ class Handler(SimpleHTTPRequestHandler):
         if V2_READY and V2_BRIDGE.is_v2_api(u.path):
             return self._v2_json("GET", u.path, q, None)
         try:
+            # `/classic` = V1 经典视图的**别名**。
+            # 文档（docs/ARCHITECTURE.md「快速开始」表）一直写着
+            # 「`/` · `/classic` V1 经典三栏视图（完整保留，直接敲 URL 就能到）」，
+            # 但 `/classic` 从来没有对应的路由 —— 敲下去落到静态处理器、404。
+            # 页面本体一直好好的，只是少了一个名字。这里补上：
+            # 把请求路径改写成 index.html，交给同一个静态处理器，行为与 `/` 完全一致。
+            if u.path in ("/classic", "/classic/"):
+                self.path = "/index.html"
+                return super().do_GET()
             if u.path == "/api/bootstrap":
                 return self._json(api_bootstrap(q))
             if u.path == "/api/messages":

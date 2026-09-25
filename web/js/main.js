@@ -562,14 +562,6 @@ document.addEventListener('click', async (ev) => {
   const attBtn = t.closest('[data-attach]');
   if (attBtn) { await openAttachment(attBtn.dataset.attach); return; }
 
-  // 主导航条：Mails 就是当前空间；其余空间尚未接入，
-  // 明确给一句提示，避免点了毫无反应。
-  const navBtn = t.closest('[data-nav]');
-  if (navBtn) {
-    if (navBtn.dataset.nav !== 'mail') toast('「' + navBtn.textContent.trim().split(/\s+/)[0] + '」空间还没接进来');
-    return;
-  }
-
   const item = t.closest('.mail-item');
   if (item && !t.closest('[data-stop]')) { await selectMail(item.dataset.id); return; }
 
@@ -838,7 +830,8 @@ async function handleAction(a) {
     return;
   }
 
-  if (a === 'reply' || a === 'draft-from') {
+  /* 「回复」= 自己写，正文里带上原文引用。 */
+  if (a === 'reply') {
     const m = s.messages.find((x) => (x.uid || x.id) === s.selectedId);
     const p = splitFrom(m?.from);
     const subject = (m?.subject || '').replace(/^Re:\s*/i, '');
@@ -846,10 +839,8 @@ async function handleAction(a) {
       composerOpen: true,
       composerPrefill: {
         to: p.addr || '',
-        subject: a === 'reply' ? 'Re: ' + subject : subject,
-        body: a === 'reply' && s.detail?.body
-          ? '\n\n----- 原邮件 -----\n' + s.detail.body.slice(0, 1500)
-          : '',
+        subject: 'Re: ' + subject,
+        body: s.detail?.body ? '\n\n----- 原邮件 -----\n' + s.detail.body.slice(0, 1500) : '',
       },
     }, ['composer']);
     return;

@@ -90,6 +90,14 @@ def make_cfg(db_path: str, **over) -> dict:
         "db_path": db_path,
         "logs_dir": os.path.join(os.path.dirname(db_path), "logs"),
         "data_dir": os.path.dirname(db_path),
+        # ⚠️ attachments_dir 必须跟 db 一起落在临时目录里。
+        # 不设它的后果是悄悄往**项目根的 attachments/** 写东西（attachment_store 会
+        # 回落到 <project_root>/attachments）：跑一遍测试，测试固件（7 字节的
+        # "PDFDATA"）就躺在 attachments/ 里了。发布目录里跑过一次测试、接着打包，
+        # 这些垃圾就跟着发出去 —— `.gitignore` 管得住 git，管不住打包/上传那一步。
+        # 已实测：在 mail-workbench-release 里跑完 unittest，
+        # attachments/<sha16>_简历.pdf 与 _report.pdf 各一份。
+        "attachments_dir": os.path.join(os.path.dirname(db_path), "attachments"),
         "ui_dir": os.path.join(PKG_ROOT, "ui"),
         "project_root": PROJ_ROOT,
         "workspace_root": os.path.dirname(PROJ_ROOT),
@@ -1988,6 +1996,42 @@ class TestV1Regression(Base):
         for mid in ids:
             self.assertFalse(self.repo.get_message(mid)["unread"], "本地状态要跟着改")
 
+    def test_batch_can_mark_unread(self):
+        """批量「标未读」必须是 `-FLAGS \\Seen`，与逐封 apply('unread') 完全一致。
+
+        这条是补出来的：`BATCH_ACTIONS` 一直缺 `unread`，于是 V2 的批量条里
+        根本没有「标未读」按钮（V1 有）。点开一封邮件会自动标已读，点错了却
+        退不回来 —— 缺少的只是一个批处理入口，单个动作一直支持。
+        """
+        ids, fake, calls = self._batch_env(n=3)
+        for mid in ids:
+            self.repo.set_flags(mid, unread=False)      # 先把它们变成已读
+        fake.bulk.clear()
+        res = actionsmod.batch(self.repo, self.cfg, "unread", ids)
+        self.assertEqual(res["succeeded"], 3, res)
+        self.assertEqual(fake.connects, 1, "应只建一次 IMAP 连接")
+        self.assertEqual(len(fake.bulk), 1, "应只发一条合并 STORE")
+        self.assertEqual(fake.bulk[0]["op"], "-", "标未读是 -FLAGS，不是 +")
+        self.assertEqual(fake.bulk[0]["flags"], ["\\Seen"])
+        self.assertEqual(calls["real"], 0, "不该有真正联网的逐封调用")
+        for mid in ids:
+            self.assertTrue(self.repo.get_message(mid)["unread"], "本地状态要跟着改")
+
+    def test_batch_action_registry_is_complete(self):
+        """每个「纯标志」批量动作都要在 _BATCH_FLAGS 里有对应项。
+
+        漏一个的后果不是报错，而是**静默降级**：那批邮件走逐封路径，
+        每封各建一次 IMAP 连接（实测单次 150ms，全选 151 封 ≈ 22.6 秒），
+        用户看到的就是「点了批量按钮，半天没反应」。
+        """
+        for a in ("archive", "ignore", "done", "read", "unread", "star", "trash"):
+            self.assertIn(a, actionsmod.BATCH_ACTIONS, "%s 应在批量动作清单里" % a)
+            self.assertIn(a, actionsmod._BATCH_FLAGS,
+                          "%s 是纯标志动作，必须能合并下发" % a)
+        # 单封动作里支持的 read/unread 一对，批量必须同样成对
+        self.assertIn("read", actionsmod.BATCH_ACTIONS)
+        self.assertIn("unread", actionsmod.BATCH_ACTIONS)
+
     def test_batch_groups_by_folder(self):
         """不同文件夹要各 select 一次、各发一条 STORE（不能把 UID 混在一起发）。"""
         ids1, fake, _ = self._batch_env(n=3, folder="INBOX", uid_from=200)
@@ -3285,6 +3329,46 @@ class TestServerRouting(Base):
         self.assertIn("recent_events", h)
         # Repo 必须透传底层 stats（健康检查依赖它）
         self.assertIn("messages", Repo(self.db).stats())
+
+
+class TestTestHarnessStaysInsideTempDir(unittest.TestCase):
+    """测试自己不许往项目目录里写东西。
+
+    这条来自一次真实的隐私/整洁事故：在**发布目录**里跑
+    `python -m unittest discover` 之后，`attachments/` 下多出两份
+    7 字节的测试固件（`<sha16>_简历.pdf`、`<sha16>_report.pdf`）。
+    成因是 `make_cfg` 没设 `attachments_dir`，`attachment_store` 于是回落到
+    `<project_root>/attachments` —— 而跑测试时 cwd 就是发布目录。
+    接着把发布目录整个上传，固件就跟着走了（`.gitignore` 拦得住 git，
+    拦不住打包/上传那一步）。
+
+    所以这里把「所有会落盘的目录都必须在临时目录里」钉死。
+    """
+
+    def test_all_output_dirs_are_derived_from_tmp_db_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "t.db")
+            cfg = make_cfg(db)
+            for key in ("attachments_dir", "logs_dir", "data_dir"):
+                p = os.path.abspath(cfg[key])
+                self.assertTrue(
+                    p.startswith(os.path.abspath(tmp)),
+                    "%s 必须落在临时目录里，实际是 %s —— "
+                    "否则跑测试会往项目目录写文件，打包时被一起带走" % (key, p))
+
+    def test_attachment_store_writes_only_under_attachments_dir(self):
+        """再验一次实际落盘路径（不信 cfg，信附件存储真正用的那个目录）。"""
+        from mail_workbench.mail import attachment_store as ats
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = make_cfg(os.path.join(tmp, "t.db"))
+            root = os.path.abspath(ats.ensure_dir(cfg))
+            self.assertTrue(root.startswith(os.path.abspath(tmp)),
+                            "attachment_store 的落盘根目录跑出临时目录了：%s" % root)
+            p = os.path.abspath(ats.local_path(cfg, "a" * 64, "简历.pdf"))
+            self.assertTrue(p.startswith(os.path.abspath(tmp)),
+                            "落盘文件路径跑出临时目录了：%s" % p)
+            # 文件名消毒也要仍然生效（中文 + 路径穿越）
+            self.assertNotIn(os.sep, ats.safe_filename("../../x/简历.pdf"))
 
 
 if __name__ == "__main__":

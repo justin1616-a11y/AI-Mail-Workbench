@@ -164,6 +164,35 @@ REPLY_CONTROLS = {
 
 LANGUAGES = ("zh", "en", "bilingual")
 
+# Reply Control 的**按钮文案**。
+#
+# 为什么必须单独一份：`REPLY_CONTROLS` 的键是给 Worker 看的标识符
+# （shorter / more_formal / …），值是一整句给模型的指令。UI 之前直接
+# 拿键当按钮文字渲染，于是界面上出现一排 `shorter` `more_formal`
+# `strip_boilerplate` —— 它们是给程序读的，不是给人读的。
+REPLY_CONTROL_LABEL = {
+    "shorter": "更短",
+    "longer": "更详细",
+    "more_formal": "更正式",
+    "more_friendly": "更亲切",
+    "more_direct": "更直接",
+    "chinese": "改成中文",
+    "english": "改成英文",
+    "bilingual": "中英双语",
+    "regenerate": "换一版",
+    "fix_typo": "只改错别字",
+    "strip_boilerplate": "去掉套话",
+}
+
+# 快捷改写的分组：11 个按钮平铺太长，按「长度 / 语气 / 语言 / 其他」分组，
+# 用户找的是「我想让它怎么样」，而不是按字母序找标识符。
+REPLY_CONTROL_GROUP = {
+    "长度": ("shorter", "longer"),
+    "语气": ("more_formal", "more_friendly", "more_direct"),
+    "语言": ("chinese", "english", "bilingual"),
+    "其它": ("regenerate", "fix_typo", "strip_boilerplate"),
+}
+
 # --------------------------------------------------------------------------
 # 工作桶（规范 §13）—— 首页只展示桶，不展示「全部邮件数量」
 # --------------------------------------------------------------------------

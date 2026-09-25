@@ -333,7 +333,12 @@ def _open_external(repo, cfg: dict, message_id: str) -> dict:
 # --------------------------------------------------------------------------
 # 批处理（规范 §19）
 # --------------------------------------------------------------------------
-BATCH_ACTIONS = ("archive", "ignore", "done", "read", "star", "trash", "waiting")
+#
+# `unread` 是后补的：V1 的批量条里有「标未读」，V2 一度只剩「标已读」——
+# 看错一封点开就被自动标已读，想恢复成未读只能逐封点，而列表里根本没有那个按钮。
+# 单个动作 apply() 一直支持 unread，缺的只是批处理入口。
+BATCH_ACTIONS = ("archive", "ignore", "done", "read", "unread",
+                 "star", "trash", "waiting")
 
 # 批处理里「纯标志」动作 —— 可以把整批 UID 合并成一条 UID STORE。
 # (op, flags) 必须与 apply() 里各动作真正下发的**完全一致**，
@@ -343,6 +348,7 @@ _BATCH_FLAGS = {
     "ignore": ("+", ["\\Seen"]),
     "done": ("+", ["\\Seen"]),
     "read": ("+", ["\\Seen"]),
+    "unread": ("-", ["\\Seen"]),
     "star": ("+", ["\\Flagged"]),
     "trash": ("+", ["\\Deleted"]),
 }

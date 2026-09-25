@@ -383,6 +383,44 @@ class TestApiContract(unittest.TestCase):
             self.assertIsInstance(res, dict, p)
             self.assertIn("ok", res, "端点 %s 缺少 ok 字段（前端会静默失败）" % p)
 
+    def test_foxmail_pseudo_folder_really_filters_by_source(self):
+        """伪文件夹「(Foxmail 历史)」必须真的只回历史邮件。
+
+        踩过的坑：这条路由原来只把 `folder` 置空、**忘了设 `source`**，
+        于是这个伪文件夹的查询等价于「不带任何过滤」——返回的是全库最新的一批
+        （全是 IMAP 邮件），跟「Foxmail 历史」这个名字毫不相干。
+        任何按它过滤的调用方（界面自检脚本、以后可能加的
+        「点底部索引数进历史列表」）都会拿到名字与内容不符的数据，
+        而且**不报错**，所以只能靠测试盯住。
+        """
+        from .test_v2 import mk_msg
+        from mail_workbench.thread import aggregator as agg
+
+        for i in range(3):                       # 3 封 IMAP（更新的时间戳）
+            agg.attach_message(self.app.repo, mk_msg(
+                "<imap%d@x>" % i, "IMAP %d" % i, "a@b.com",
+                date_iso="2026-09-20T10:00:00+08:00"), self.app.cfg)
+        for i in range(2):                       # 2 封 Foxmail 历史
+            m = mk_msg("<fx%d@x>" % i, "历史 %d" % i, "old@b.com",
+                       date_iso="2023-05-01T10:00:00+08:00")
+            m["source"] = "foxmail"
+            agg.attach_message(self.app.repo, m, self.app.cfg)
+
+        res = self._call("GET", "/api/v2/messages",
+                         {"folder": ["(Foxmail 历史)"], "limit": ["50"]})
+        self.assertTrue(res.get("ok"), res)
+        msgs = res["data"]["messages"]
+        self.assertTrue(msgs, "伪文件夹应当能查到历史邮件")
+        bad = [m for m in msgs if m["source"] != "foxmail"]
+        self.assertEqual(bad, [],
+                         "伪文件夹里混进了非 foxmail 的邮件：%s"
+                         % [m["message_id"] for m in bad])
+        self.assertEqual(len(msgs), 2, "应当只回那 2 封历史邮件，实际 %d 封" % len(msgs))
+
+        # index=1 是同一件事的另一种写法，两条路径必须一致
+        res2 = self._call("GET", "/api/v2/messages", {"index": ["1"], "limit": ["50"]})
+        self.assertEqual(len(res2["data"]["messages"]), 2)
+
     def test_health_and_metrics_payload_shape(self):
         h = self._call("GET", "/api/v2/health")
         self.assertTrue(h["ok"])

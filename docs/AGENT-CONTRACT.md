@@ -1,12 +1,4 @@
----
-name: mail-workbench
-display_name: 邮件工作台 V2（交大邮箱 + Foxmail，Human-in-the-loop）
-description: 一套**跑在本机的邮件工作台**：左侧文件夹树、中间列表、右侧正文与附件，把「交大邮箱（IMAP）」和「Foxmail 本地索引」合成一个网页；V2 增加了**工作桶 / 「仅知会」区 / 线程视图 / 草稿任务队列 / 跨线程上下文 / 缺信息门禁 / 附件一键下载并用默认程序打开**。本技能负责把它**装起来、启动起来、并以 WorkBuddy worker 的身份认领草稿任务**。触发语：「装邮件工作台 / 启动邮件工作台 / 打开邮件工作台 / 邮件工作台打不开 / 处理邮件工作台草稿 / 认领草稿任务 / 帮我起草邮件工作台里的回复 / 附件下载不下来 / 改了分类规则没生效 / 邮件工作台」。与 `sjtu-mail-remote` 的分工：那个是「AI 直接读写邮件」（无界面，适合微信远程指挥）；这个是「给人看的界面 + 常驻服务」，两者可共存、不冲突。
-version: 2.1.0
-agent_created: true
----
-
-# 邮件工作台 V2
+# 邮件工作台 V2 · AI 协作契约
 
 跑在本机的邮件应用，定位是 **Human-in-the-loop AI Email Workbench**：
 工作台负责邮件基础设施 / 状态 / 队列 / UI，**你（AI）只负责语言理解**。
@@ -338,7 +330,7 @@ AI 自己只做三件事：**拉起服务**、**认领并完成草稿任务**、
   默认关闭是刻意的：**候选不等于要调 AI**，防止所有新邮件都烧 token。
 
 V1 的其他配置项（`index_path` / `sent_folder` / `classify` 等）含义不变，
-详见 `README.md` 第 §十三 与 `README-V1.md`。
+详见 `ARCHITECTURE.md` 第 §十三（`README-V1.md` 仅在开发仓库）。
 
 ## 分享给别人
 
@@ -353,7 +345,7 @@ V1 的其他配置项（`index_path` / `sent_folder` / `classify` 等）含义�
 |---|---|
 | `_e2e_contract.py` | **V2 端到端契约验证**：认领→上下文→Plan→草稿→改写→审核→发送门禁→事件轨迹。⚠️ 会先清空活跃草稿任务 |
 | `uitest_v2_workbench.cjs` | V2 界面自检 + 截图（产出 `_v2_uitest_report.json`） |
-| `python -X utf8 -m unittest discover -s mail_workbench/tests -t .` | 168 个单元/回归测试 |
+| `python -X utf8 -m unittest discover -s mail_workbench/tests -t .` | 240 个单元/回归测试 |
 | `uitest*.cjs` | V1 浏览器回归测试（需要 Node + playwright-core，并设 `NODE_PATH`） |
 | `_unseen.py` | 查/改某封邮件的已读标记。**跑 V1 回归前先 `snapshot`，跑完 `restore`** |
 | `check_send.py` | V1 发送链路端到端。⚠️ **会真发一封给自己，跑前先问用户** |
